@@ -21,15 +21,12 @@ import kr.dku.councilflow.job.JobType;
 import kr.dku.councilflow.job.JobView;
 import kr.dku.councilflow.org.Organization;
 import kr.dku.councilflow.org.OrganizationRepository;
-import kr.dku.councilflow.user.MembershipRole;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MeetingService {
 
-    /** 회의를 올리고 분석을 요청할 수 있는 역할 */
-    private static final MembershipRole[] UPLOADERS = {MembershipRole.MEETING_CHAIR, MembershipRole.ORG_ADMIN};
     static final int MAX_SEGMENTS = 3000;
 
     private final OrgAccessGuard accessGuard;
@@ -74,7 +71,7 @@ public class MeetingService {
     /** 텍스트 회의록으로 회의를 만든다. 줄 단위로 발언(Segment)을 나눠 저장한다. */
     @Transactional
     public MeetingDetail createFromText(CurrentUser user, CreateTextMeeting request) {
-        accessGuard.requireRole(user, request.orgId(), UPLOADERS);
+        accessGuard.requireOwner(user, request.orgId());
         List<TranscriptSplitter.Line> lines = TranscriptSplitter.split(request.transcript());
         if (lines.isEmpty()) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "회의록에 내용이 없습니다.");
@@ -97,10 +94,10 @@ public class MeetingService {
 
     /**
      * PDF 회의록에서 글자만 뽑아 돌려준다. 저장하지 않는다(화면에서 확인·수정한 뒤 createFromText 로 올림).
-     * 회의를 올릴 수 있는 역할만 쓸 수 있다.
+     * 그룹 owner만 쓸 수 있다.
      */
     public PdfTranscriptExtractor.Extracted extractPdf(CurrentUser user, long orgId, byte[] pdf) {
-        accessGuard.requireRole(user, orgId, UPLOADERS);
+        accessGuard.requireOwner(user, orgId);
         return PdfTranscriptExtractor.extract(pdf);
     }
 
@@ -126,7 +123,7 @@ public class MeetingService {
     @Transactional
     public JobView requestAnalysis(CurrentUser user, long meetingId) {
         Meeting meeting = meetings.findById(meetingId).orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN));
-        accessGuard.requireRole(user, meeting.getOrgId(), UPLOADERS);
+        accessGuard.requireOwner(user, meeting.getOrgId());
 
         var running = jobs.findFirstByTypeAndTargetIdOrderByIdDesc(JobType.ANALYZE, meetingId)
                 .filter(job -> EnumSet.of(JobStatus.QUEUED, JobStatus.RUNNING).contains(job.getStatus()));
@@ -143,7 +140,7 @@ public class MeetingService {
         return JobView.of(job);
     }
 
-    /** 회의가 속한 조직의 활성 소속만 통과. 없는 회의도 403(존재 여부를 알려 주지 않음). */
+    /** 회의가 속한 그룹의 소속(또는 서비스 관리자 열람)만 통과. 없는 회의도 403(존재 여부를 알려 주지 않음). */
     public Meeting loadForMember(CurrentUser user, long meetingId) {
         Meeting meeting = meetings.findById(meetingId).orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN));
         accessGuard.requireMember(user, meeting.getOrgId());

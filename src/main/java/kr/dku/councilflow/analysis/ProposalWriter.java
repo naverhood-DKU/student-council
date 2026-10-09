@@ -63,7 +63,7 @@ public class ProposalWriter {
         Map<String, Long> segmentIdByLabel = segments
                 .findByMeetingIdAndTranscriptVersionOrderBySeq(meeting.getId(), transcriptVersion).stream()
                 .collect(Collectors.toMap(Segment::label, Segment::getId));
-        List<Department> orgDepartments = departments.findByOrganizationIdOrderById(meeting.getOrgId());
+        List<Department> orgDepartments = departments.findByOrganizationIdAndActiveTrueOrderById(meeting.getOrgId());
 
         for (AiAnalysis.Agenda agenda : analysis.agendas()) {
             String agendaName = agenda.agenda().isBlank() ? "(안건 이름 없음)" : agenda.agenda();

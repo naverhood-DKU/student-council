@@ -41,14 +41,14 @@ class DecisionController {
         return decisionService.edit(user, decisionId, ifMatch, request);
     }
 
-    /** 승인 (If-Match: version). 회의 책임자만. */
+    /** 승인 (If-Match: version). 그룹 owner만. */
     @PostMapping("/api/decisions/{decisionId}/approve")
     DecisionViews.DecisionView approve(CurrentUser user, @PathVariable long decisionId,
                                        @RequestHeader(value = IfMatch.HEADER, required = false) String ifMatch) {
         return decisionService.approve(user, decisionId, ifMatch);
     }
 
-    /** 업무 직접 추가(회의 책임자) */
+    /** 업무 직접 추가(그룹 owner) */
     @PostMapping("/api/decisions/{decisionId}/tasks")
     @ResponseStatus(HttpStatus.CREATED)
     DecisionViews.TaskView addTask(CurrentUser user, @PathVariable long decisionId,

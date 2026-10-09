@@ -20,7 +20,7 @@ import kr.dku.councilflow.org.Organization;
 import kr.dku.councilflow.user.AppUser;
 
 /**
- * 승인된 결정을 직속 하위 조직 한 곳에 보낸 요청. (decision, 받는 조직)마다 하나뿐이다(DB 고유 제약).
+ * 승인된 결정으로 다른 그룹 한 곳에 보낸 업무 요청. (decision, 받는 그룹)마다 하나뿐이다(DB 고유 제약).
  * 받는 조직은 결정 요약과 요청 사항만 본다. 보낸 조직의 회의록·발언은 볼 수 없다(원칙 8).
  */
 @Entity

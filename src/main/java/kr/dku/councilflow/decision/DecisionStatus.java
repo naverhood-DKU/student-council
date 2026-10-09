@@ -10,7 +10,7 @@ import java.util.Set;
  * ON_HOLD           → APPROVED / CHANGED / CANCELLED
  * APPROVED          → CHANGED / CANCELLED
  * CHANGED, CANCELLED 는 끝.
- * 변경 주체는 원 회의 조직의 회의 책임자(MEETING_CHAIR).
+ * 변경 주체는 회의를 연 그룹의 owner(회장).
  */
 public enum DecisionStatus {
     PROPOSED,

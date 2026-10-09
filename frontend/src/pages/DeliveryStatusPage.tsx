@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router'
 import {
   api,
   ApiError,
-  type ChildOrg,
+  type GroupOption,
   type DecisionDeliveries,
   type DeliveryPatch,
   type DeliveryView,
@@ -11,11 +11,11 @@ import {
   type RequestType,
 } from '../api'
 import { DELIVERY_STATUS_LABEL, formatDateTime, REQUEST_TYPE_LABEL, tallyText } from '../labels'
-import { errorMessage, isChair, useLoad, useOrg } from '../useOrg'
+import { errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
 import { TopBar } from './TopBar'
 
 /**
- * 보낸 조직의 전달 현황: 결정 하나를 하위 조직들에 보내고, 대상별 상태를 보고, 결과를 확정·반려한다.
+ * 보낸 그룹의 요청 현황: 결정 하나로 다른 그룹들에 업무를 요청하고, 대상별 상태를 보고, 결과를 승인·반려한다.
  * 집계 분모(전체)는 해당 없음·취소를 뺀 유효 대상 수다.
  */
 export function DeliveryStatusPage() {
@@ -38,31 +38,31 @@ export function DeliveryStatusPage() {
 }
 
 function Status({ org, decisionId }: { org: OrgDetail; decisionId: number }) {
-  const [data, reload] = useLoad<{ summary: DecisionDeliveries; children: ChildOrg[] }>(
-    async () => ({ summary: await api.deliverySummary(decisionId), children: await api.children(org.id) }),
+  const [data, reload] = useLoad<{ summary: DecisionDeliveries; groups: GroupOption[] }>(
+    async () => ({ summary: await api.deliverySummary(decisionId), groups: await api.requestTargets(org.id) }),
     [decisionId, org.id],
-    '전달 현황을 불러오지 못했습니다.',
+    '요청 현황을 불러오지 못했습니다.',
   )
   const [sending, setSending] = useState(false)
-  const chair = isChair(org)
+  const chair = isOwner(org)
 
   if (data.status === 'loading') return <p className="page-message">불러오는 중…</p>
   if (data.status === 'error') return <p className="error">{data.message}</p>
-  const { summary, children } = data.data
+  const { summary, groups } = data.data
   const sentTo = new Set(summary.targets.map((t) => t.toOrgId))
-  const remaining = children.filter((c) => !sentTo.has(c.id))
+  const remaining = groups.filter((c) => !sentTo.has(c.id))
 
   return (
     <>
       <section className="org-header">
         <span className="chip">{summary.agenda}</span>
         <h2>{summary.summary}</h2>
-        <p className="tally">{summary.targets.length === 0 ? '아직 전달하지 않았습니다.' : tallyText(summary.tally)}</p>
+        <p className="tally">{summary.targets.length === 0 ? '아직 요청하지 않았습니다.' : tallyText(summary.tally)}</p>
         {summary.targets.length > 0 && <TallyBar summary={summary} />}
       </section>
 
       {chair && remaining.length > 0 && !sending && (
-        <button type="button" className="primary inline" onClick={() => setSending(true)}>하위 조직에 전달하기</button>
+        <button type="button" className="primary inline" onClick={() => setSending(true)}>다른 그룹에 업무 요청</button>
       )}
       {sending && (
         <SendForm
@@ -99,11 +99,12 @@ function TallyBar({ summary }: { summary: DecisionDeliveries }) {
 
 function SendForm({ decisionId, remaining, onDone, onCancel }: {
   decisionId: number
-  remaining: ChildOrg[]
+  remaining: GroupOption[]
   onDone: () => void
   onCancel: () => void
 }) {
-  const [targets, setTargets] = useState<Set<number>>(() => new Set(remaining.map((c) => c.id)))
+  // 모든 그룹이 후보라서 처음에는 아무것도 고르지 않는다.
+  const [targets, setTargets] = useState<Set<number>>(() => new Set())
   const [requestType, setRequestType] = useState<RequestType>('COOPERATE')
   const [dueDate, setDueDate] = useState('')
   const [message, setMessage] = useState('')
@@ -130,16 +131,16 @@ function SendForm({ decisionId, remaining, onDone, onCancel }: {
       })
       onDone()
     } catch (e) {
-      setError(errorMessage(e, '전달하지 못했습니다.'))
+      setError(errorMessage(e, '요청하지 못했습니다.'))
       setBusy(false)
     }
   }
 
   return (
     <form className="card form-card" onSubmit={submit}>
-      <h3>하위 조직에 전달</h3>
+      <h3>다른 그룹에 업무 요청</h3>
       <fieldset className="checks">
-        <legend className="small">받을 조직</legend>
+        <legend className="small">받을 그룹</legend>
         {remaining.map((c) => (
           <label key={c.id} className="check-row">
             <input type="checkbox" checked={targets.has(c.id)} onChange={() => toggle(c.id)} />
@@ -164,11 +165,11 @@ function SendForm({ decisionId, remaining, onDone, onCancel }: {
         <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} maxLength={2000}
                   placeholder="받는 학생회가 무엇을 하면 되는지 적어 주세요." />
       </label>
-      <p className="muted small">받는 조직에는 결정 요약과 요청 사항만 보이고, 우리 회의록은 보이지 않습니다.</p>
+      <p className="muted small">받는 그룹에는 결정 요약과 요청 사항만 보이고, 우리 회의록은 보이지 않습니다.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="actions-row">
         <button type="submit" className="primary inline" disabled={busy || targets.size === 0}>
-          {targets.size}곳에 전달
+          {targets.size}곳에 요청
         </button>
         <button type="button" className="ghost" onClick={onCancel}>취소</button>
       </div>
@@ -194,7 +195,7 @@ function TargetCard({ delivery: d, chair, onChanged }: { delivery: DeliveryView;
       onChanged()
     } catch (e) {
       setError(e instanceof ApiError && e.code === 'VERSION_CONFLICT'
-        ? '받은 조직이 먼저 바꿨습니다. 최신 상태를 다시 불러왔습니다.'
+        ? '받은 그룹이 먼저 바꿨습니다. 최신 상태를 다시 불러왔습니다.'
         : errorMessage(e, fallback))
       if (e instanceof ApiError && e.code === 'VERSION_CONFLICT') onChanged()
       setBusy(false)
@@ -203,7 +204,7 @@ function TargetCard({ delivery: d, chair, onChanged }: { delivery: DeliveryView;
   const patch = (change: DeliveryPatch, fallback: string) => run(() => api.updateDelivery(d, change), fallback)
 
   function cancel() {
-    const reason = window.prompt(`${d.toOrgName}에 보낸 전달을 취소할까요? 취소 사유를 적어 주세요.`)
+    const reason = window.prompt(`${d.toOrgName}에 보낸 요청을 취소할까요? 취소 사유를 적어 주세요.`)
     if (reason !== null) patch({ status: 'CANCELLED', reason }, '취소하지 못했습니다.')
   }
 
@@ -286,7 +287,7 @@ function TargetCard({ delivery: d, chair, onChanged }: { delivery: DeliveryView;
               기한 변경
             </button>
           )}
-          <button type="button" className="ghost danger" disabled={busy} onClick={cancel}>전달 취소</button>
+          <button type="button" className="ghost danger" disabled={busy} onClick={cancel}>요청 취소</button>
         </div>
       )}
       {error && <p className="error" role="alert">{error}</p>}

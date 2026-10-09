@@ -438,3 +438,59 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
 .link-card .tally { display: block; margin-top: 4px; }
 .inline-label { white-space: nowrap; }
 .inline-label input[type="date"] { width: auto; margin: 0; }
+
+/* 구성원·관리자 목록 한 줄: 이름은 왼쪽, 바꾸기 버튼은 오른쪽(좁은 화면에서는 아래로) */
+.member-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; }
+.member-row .actions-row { margin: 0; }
+.member-row select { width: auto; }
+
+/* 업무보드 트리: 그룹 → 부서 → 사람. 왼쪽 세로줄과 가로 가지로 이어 그린다. */
+.tree { margin-top: 12px; }
+.tree-root { margin: 0; }
+.tree-children, .tree-leaves { list-style: none; margin: 0; padding: 0; }
+.tree-children { margin-left: 18px; border-left: 2px solid var(--border); padding-top: 8px; }
+.tree-node { position: relative; padding: 0 0 12px 20px; }
+.tree-node::before {
+  content: ''; position: absolute; left: 0; top: 26px; width: 16px; border-top: 2px solid var(--border);
+}
+.tree-card { display: grid; gap: 6px; margin: 0; }
+.tree-card.mine { border-color: var(--primary); }
+.tree-stats { color: var(--muted); }
+.tree-leaves { margin: 6px 0 0 18px; border-left: 2px dashed var(--border); padding-left: 14px; }
+.tree-leaves li { padding: 2px 0; }
+.chip.mine-chip { background: var(--primary); color: var(--primary-text); }
+
+/* 업무 카드의 체크리스트 */
+.checklist { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+.checklist-head { margin: 0 0 4px; }
+.checklist-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.checklist-items li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.checklist-items li.mine { background: var(--chip-bg); border-radius: 6px; padding: 2px 4px; }
+.checklist-items .check-row { margin: 0; flex: 1 1 140px; }
+.checklist-tools { display: inline-flex; align-items: center; gap: 4px; }
+.checklist-tools select, .checklist-add select { width: auto; margin: 0; font-size: 0.85rem; }
+.checklist-add { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.checklist-add input { flex: 1 1 140px; margin: 0; }
+.done-text { text-decoration: line-through; color: var(--muted); }
+.link-button.danger { color: var(--danger); }
+
+/* 가입 코드 */
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--chip-bg); padding: 1px 6px; border-radius: 6px; }
+.code-input { width: auto; flex: 1 1 160px; margin: 0; }
+.join-code input { flex: 1 1 220px; margin: 0; }
+
+/* 구성 페이지 탭: 구성원 · 부서 · 직책 */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 8px 0 12px; overflow-x: auto; }
+.tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 12px; color: var(--muted); cursor: pointer; font: inherit; }
+.tab.active { color: var(--text); border-bottom-color: var(--primary); font-weight: 600; }
+.tab-count { margin-left: 4px; font-size: 0.8rem; color: var(--muted); }
+.setup-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.setup-add input { flex: 1 1 180px; margin: 0; }
+.setup-add select, .setup-edit select { width: auto; margin: 0; }
+.setup-add .error { flex-basis: 100%; }
+.setup-edit { display: grid; gap: 6px; padding: 10px 0; }
+.setup-edit input { margin: 0; }
+.level-help { margin: 0 0 12px; padding-left: 18px; display: grid; gap: 2px; }
+
+/* 카드 안 목록: 줄이 카드 테두리에 붙지 않게 */
+.card.row-list { padding: 4px 16px; }

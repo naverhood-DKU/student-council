@@ -1,7 +1,8 @@
 // 서버 API 호출 모음. 토큰은 탭을 닫으면 사라지는 sessionStorage 에만 둔다.
 
 export type OrgType = 'STUDENT_UNION' | 'COLLEGE' | 'DEPARTMENT'
-export type MembershipRole = 'ORG_ADMIN' | 'MEETING_CHAIR' | 'DEPT_MEMBER' | 'FINANCE_REVIEWER'
+/** 그룹 안 역할: 회장 / 부장 / 부원 */
+export type MembershipRole = 'OWNER' | 'EDITOR' | 'VIEWER'
 export type MeetingStatus = 'READY' | 'ANALYZING' | 'ANALYZED' | 'ANALYSIS_FAILED'
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'FAILED_UNKNOWN'
 export type DecisionStatus = 'PROPOSED' | 'APPROVED' | 'ON_HOLD' | 'CHANGED' | 'CANCELLED'
@@ -21,15 +22,97 @@ export interface MembershipView {
   orgName: string
   orgType: OrgType
   role: MembershipRole
+  /** 직책 이름(회장은 null) */
+  positionName: string | null
   departmentId: number | null
   departmentName: string | null
+}
+
+export type JoinRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+/** 내 가입 신청(처리 전·거절). 승인된 것은 소속(memberships)으로 보인다. */
+export interface MyJoinRequest {
+  id: number
+  orgId: number
+  orgName: string
+  status: JoinRequestStatus
+  rejectReason: string | null
+  requestedAt: string
+}
+
+/** 회장이 보는 처리 전 가입 신청 */
+export interface PendingJoinRequest {
+  id: number
+  userId: number
+  loginId: string
+  name: string
+  requestedAt: string
+  version: number
 }
 
 export interface Me {
   id: number
   email: string
   name: string
+  /** 서비스 관리자: 그룹 만들기·owner 부여, 모든 그룹 읽기 전용 열람 */
+  serviceAdmin: boolean
   memberships: MembershipView[]
+  joinRequests: MyJoinRequest[]
+}
+
+export interface Member {
+  membershipId: number
+  userId: number
+  loginId: string
+  name: string
+  /** 권한(직책의 권한 수준). 회장은 OWNER */
+  role: MembershipRole
+  positionId: number | null
+  positionName: string | null
+  departmentId: number | null
+  departmentName: string | null
+  version: number
+}
+
+export interface NewMember {
+  loginId: string
+  name: string
+  initialPassword: string
+  positionId: number
+  departmentId: number | null
+}
+
+/** 직책: 회장이 정한 이름과 권한 수준(EDITOR 부장급 / VIEWER 부원급) */
+export interface PositionSetting {
+  id: number
+  name: string
+  level: MembershipRole
+  sortOrder: number
+  memberCount: number
+  version: number
+}
+
+/** 부서 설정: 이름과 AI가 담당 부서를 추천할 때 쓰는 역할 키워드 */
+export interface DepartmentSetting {
+  id: number
+  name: string
+  roleKeywords: string | null
+  memberCount: number
+  openTaskCount: number
+  version: number
+}
+
+export interface AdminGroup {
+  id: number
+  name: string
+  joinCode: string | null
+  type: OrgType
+  parentId: number | null
+  parentName: string | null
+  term: string
+  active: boolean
+  memberCount: number
+  owners: { userId: number; loginId: string; name: string }[]
 }
 
 export interface OrgDetail {
@@ -38,8 +121,15 @@ export interface OrgDetail {
   type: OrgType
   parentId: number | null
   term: string
-  myRoles: MembershipRole[]
+  /** 가입 코드. 부장·부원이 회원가입할 때 넣는다 */
+  joinCode: string | null
+  /** 내 역할. 서비스 관리자 열람이면 null */
+  myRole: MembershipRole | null
+  /** 내 직책 이름. 회장·서비스 관리자 열람이면 null */
+  myPositionName: string | null
   myDepartmentIds: number[]
+  /** 서비스 관리자의 읽기 전용 열람 */
+  adminView: boolean
   departments: { id: number; name: string }[]
 }
 
@@ -148,6 +238,19 @@ export interface BoardTask {
   meetingId: number
   meetingTitle: string
   version: number
+  /** 체크리스트: 회장·담당 부서 부장이 부서 사람에게 맡긴 작은 할 일 */
+  items: TaskItem[]
+}
+
+export interface TaskItem {
+  id: number
+  taskId: number
+  title: string
+  assigneeUserId: number | null
+  assigneeName: string | null
+  done: boolean
+  doneAt: string | null
+  version: number
 }
 
 export type DeliveryStatus =
@@ -162,7 +265,7 @@ export type DeliveryStatus =
 export type RequestType = 'INFORM' | 'COOPERATE' | 'RESULT_NOTICE'
 export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 
-export interface ChildOrg {
+export interface GroupOption {
   id: number
   name: string
   type: OrgType
@@ -314,6 +417,7 @@ async function request<T>(method: string, path: string, body?: unknown, ifMatch?
       error?.requestId ?? response.headers.get('X-Request-Id') ?? undefined,
     )
   }
+  if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
 
@@ -327,6 +431,14 @@ export interface TaskPatch {
 export const api = {
   login: (email: string, password: string) =>
     request<TokenResponse>('POST', '/api/auth/login', { email, password }),
+  signUp: (input: { loginId: string; name: string; password: string; groupCode: string }) =>
+    request<{ loginId: string; groupName: string; status: JoinRequestStatus }>('POST', '/api/auth/signup', input),
+  applyJoin: (groupCode: string) => request<MyJoinRequest>('POST', '/api/me/join-requests', { groupCode }),
+  joinRequests: (orgId: number) => request<PendingJoinRequest[]>('GET', `/api/orgs/${orgId}/join-requests`),
+  approveJoin: (req: { id: number; version: number }, input: { positionId: number; departmentId: number | null }) =>
+    request<MyJoinRequest>('POST', `/api/join-requests/${req.id}/approve`, input, req.version),
+  rejectJoin: (req: { id: number; version: number }, reason: string) =>
+    request<MyJoinRequest>('POST', `/api/join-requests/${req.id}/reject`, { reason }, req.version),
   me: () => request<Me>('GET', '/api/me'),
   org: (orgId: number) => request<OrgDetail>('GET', `/api/orgs/${orgId}`),
 
@@ -352,11 +464,47 @@ export const api = {
   updateTask: (task: { id: number; version: number }, change: TaskPatch) =>
     request<TaskView>('PATCH', `/api/tasks/${task.id}`, change, task.version),
   board: (orgId: number) => request<BoardTask[]>('GET', `/api/orgs/${orgId}/tasks`),
+  addTaskItem: (taskId: number, input: { title: string; assigneeUserId: number | null }) =>
+    request<TaskItem>('POST', `/api/tasks/${taskId}/items`, input),
+  updateTaskItem: (item: { id: number; version: number }, change: { title?: string; assigneeUserId?: number | null; done?: boolean }) =>
+    request<TaskItem>('PATCH', `/api/task-items/${item.id}`, change, item.version),
+  removeTaskItem: (itemId: number) => request<void>('DELETE', `/api/task-items/${itemId}`),
   addTask: (decisionId: number, task: NewTask) =>
     request<TaskView>('POST', `/api/decisions/${decisionId}/tasks`, task),
   approvedDecisions: (orgId: number) => request<DecisionOption[]>('GET', `/api/orgs/${orgId}/decisions`),
 
-  children: (orgId: number) => request<ChildOrg[]>('GET', `/api/orgs/${orgId}/children`),
+  requestTargets: (orgId: number) => request<GroupOption[]>('GET', `/api/orgs/${orgId}/request-targets`),
+
+  members: (orgId: number) => request<Member[]>('GET', `/api/orgs/${orgId}/members`),
+  addMember: (orgId: number, input: NewMember) => request<Member>('POST', `/api/orgs/${orgId}/members`, input),
+  updateMember: (member: { membershipId: number; version: number }, change: { positionId?: number; departmentId?: number | null }) =>
+    request<Member>('PATCH', `/api/memberships/${member.membershipId}`, change, member.version),
+
+  departmentSettings: (orgId: number) => request<DepartmentSetting[]>('GET', `/api/orgs/${orgId}/departments`),
+  addDepartment: (orgId: number, input: { name: string; roleKeywords: string }) =>
+    request<DepartmentSetting>('POST', `/api/orgs/${orgId}/departments`, input),
+  updateDepartment: (department: { id: number; version: number }, change: { name?: string; roleKeywords?: string }) =>
+    request<DepartmentSetting>('PATCH', `/api/departments/${department.id}`, change, department.version),
+  removeDepartment: (departmentId: number) => request<void>('DELETE', `/api/departments/${departmentId}`),
+  positions: (orgId: number) => request<PositionSetting[]>('GET', `/api/orgs/${orgId}/positions`),
+  addPosition: (orgId: number, input: { name: string; level: MembershipRole }) =>
+    request<PositionSetting>('POST', `/api/orgs/${orgId}/positions`, input),
+  updatePosition: (position: { id: number; version: number }, change: { name?: string; level?: MembershipRole }) =>
+    request<PositionSetting>('PATCH', `/api/positions/${position.id}`, change, position.version),
+  removePosition: (positionId: number) => request<void>('DELETE', `/api/positions/${positionId}`),
+  removeMember: (membershipId: number) => request<void>('DELETE', `/api/memberships/${membershipId}`),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>('POST', '/api/me/password', { currentPassword, newPassword }),
+
+  adminGroups: () => request<AdminGroup[]>('GET', '/api/admin/groups'),
+  adminCreateGroup: (input: { name: string; joinCode: string; type: OrgType; parentId: number | null; term: string }) =>
+    request<AdminGroup>('POST', '/api/admin/groups', input),
+  adminChangeJoinCode: (orgId: number, joinCode: string) =>
+    request<AdminGroup>('PATCH', `/api/admin/groups/${orgId}`, { joinCode }),
+  adminGrantOwner: (orgId: number, input: { loginId: string; name: string; initialPassword: string }) =>
+    request<AdminGroup>('POST', `/api/admin/groups/${orgId}/owners`, input),
+  adminRevokeOwner: (orgId: number, userId: number) =>
+    request<AdminGroup>('DELETE', `/api/admin/groups/${orgId}/owners/${userId}`),
   sendDeliveries: (
     decisionId: number,
     input: { targetOrgIds: number[]; requestType: RequestType; dueDate: string | null; message: string },

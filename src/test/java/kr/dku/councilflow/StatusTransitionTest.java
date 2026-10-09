@@ -9,6 +9,7 @@ import kr.dku.councilflow.decision.DecisionStatus;
 import kr.dku.councilflow.decision.TaskStatus;
 import kr.dku.councilflow.delivery.DeliveryStatus;
 import kr.dku.councilflow.job.JobStatus;
+import kr.dku.councilflow.join.JoinRequestStatus;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -83,6 +84,19 @@ class StatusTransitionTest {
                 JobStatus.FAILED_UNKNOWN, EnumSet.noneOf(JobStatus.class));
         for (JobStatus from : JobStatus.values()) {
             for (JobStatus to : JobStatus.values()) {
+                assertThat(from.canMoveTo(to)).as(from + " -> " + to).isEqualTo(expected.get(from).contains(to));
+            }
+        }
+    }
+
+    @Test
+    void 가입_신청_전이표() {
+        Map<JoinRequestStatus, Set<JoinRequestStatus>> expected = Map.of(
+                JoinRequestStatus.PENDING, EnumSet.of(JoinRequestStatus.APPROVED, JoinRequestStatus.REJECTED),
+                JoinRequestStatus.APPROVED, EnumSet.of(JoinRequestStatus.PENDING),
+                JoinRequestStatus.REJECTED, EnumSet.of(JoinRequestStatus.PENDING));
+        for (JoinRequestStatus from : JoinRequestStatus.values()) {
+            for (JoinRequestStatus to : JoinRequestStatus.values()) {
                 assertThat(from.canMoveTo(to)).as(from + " -> " + to).isEqualTo(expected.get(from).contains(to));
             }
         }

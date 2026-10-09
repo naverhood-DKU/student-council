@@ -36,15 +36,13 @@ export function useOrg(orgId: number) {
   return useLoad<OrgDetail>(() => api.org(orgId), [orgId], '조직 정보를 불러오지 못했습니다.')
 }
 
-export function isChair(org: OrgDetail): boolean {
-  return org.myRoles.includes('MEETING_CHAIR')
+/** 그룹 회장(owner): 회의·승인·업무 편집·그룹 간 요청·구성원 관리 */
+export function isOwner(org: OrgDetail): boolean {
+  return org.myRole === 'OWNER'
 }
 
-/** 받은 전달을 수락·확인 요청·담당 지정할 수 있는 역할 */
-export function canManageReceived(org: OrgDetail): boolean {
-  return org.myRoles.includes('MEETING_CHAIR') || org.myRoles.includes('ORG_ADMIN')
-}
-
-export function canUpload(org: OrgDetail): boolean {
-  return org.myRoles.includes('MEETING_CHAIR') || org.myRoles.includes('ORG_ADMIN')
+/** 이 부서의 일을 시작·제출할 수 있나: owner, 또는 그 부서의 부장(editor). 부원(viewer)은 조회만 */
+export function canWorkFor(org: OrgDetail, departmentId: number | null): boolean {
+  if (isOwner(org)) return true
+  return org.myRole === 'EDITOR' && departmentId != null && org.myDepartmentIds.includes(departmentId)
 }

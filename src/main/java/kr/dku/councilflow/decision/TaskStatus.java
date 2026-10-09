@@ -12,7 +12,7 @@ import java.util.Set;
  * ASSIGNED    → UNASSIGNED(담당 해제) / IN_PROGRESS
  * IN_PROGRESS → SUBMITTED                                        (결과 제출)
  * SUBMITTED   → DONE(완료 확정) / IN_PROGRESS(반려)
- * 끝나지 않은 업무 → CANCELLED (회의 책임자가 업무 취소)
+ * 끝나지 않은 업무 → CANCELLED (회장이 업무 취소)
  * DONE, CANCELLED 는 끝. 끝난 업무는 내용도 고칠 수 없다.
  */
 public enum TaskStatus {

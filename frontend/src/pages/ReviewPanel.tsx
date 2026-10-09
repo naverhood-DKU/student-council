@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { api, ApiError, type DecisionView, type OrgDetail, type Proposals, type Segment, type TaskView } from '../api'
 import { AI_STATUS_LABEL, DECISION_STATUS_LABEL, TASK_STATUS_LABEL } from '../labels'
-import { errorMessage, isChair, useLoad } from '../useOrg'
+import { errorMessage, isOwner, useLoad } from '../useOrg'
 import { AddTaskForm } from './TaskForms'
 
 type Selection = { kind: 'decision' | 'task'; id: number; segmentIds: number[] } | null
@@ -18,8 +18,6 @@ export function ReviewPanel({ org, meetingId }: { org: OrgDetail; meetingId: num
     'AI 제안을 불러오지 못했습니다.',
   )
   const [selection, setSelection] = useState<Selection>(null)
-  const [children] = useLoad(() => api.children(org.id), [org.id], '')
-  const canDeliver = children.status === 'ready' && children.data.length > 0
 
   useEffect(() => {
     const first = selection?.segmentIds[0]
@@ -48,11 +46,11 @@ export function ReviewPanel({ org, meetingId }: { org: OrgDetail; meetingId: num
               key={`${decision.id}-${decision.version}`}
               decision={decision}
               departments={data.departments}
-              chair={isChair(org)}
+              chair={isOwner(org)}
               selection={selection}
               onSelect={setSelection}
               onChanged={reload}
-              deliveryLink={canDeliver ? `/orgs/${org.id}/decisions/${decision.id}/deliveries` : null}
+              deliveryLink={`/orgs/${org.id}/decisions/${decision.id}/deliveries`}
             />
           ))}
         </div>
@@ -116,7 +114,7 @@ interface CardProps {
   selection: Selection
   onSelect: (s: Selection) => void
   onChanged: () => void
-  /** 하위 조직이 있으면 승인된 결정의 전달 화면 주소 */
+  /** 승인된 결정의 업무 요청 화면 주소 */
   deliveryLink: string | null
 }
 
@@ -216,7 +214,7 @@ function DecisionCard({ decision, departments, chair, selection, onSelect, onCha
         <p className="muted small">{decision.approvedByName}님이 승인했습니다.</p>
       )}
       {decision.status === 'APPROVED' && deliveryLink && (
-        <Link to={deliveryLink} className="ghost deliver-link">하위 조직에 전달 · 전달 현황</Link>
+        <Link to={deliveryLink} className="ghost deliver-link">다른 그룹에 업무 요청 · 요청 현황</Link>
       )}
       {editable && (
         <div className="actions-row">

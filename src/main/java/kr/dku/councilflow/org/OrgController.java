@@ -23,9 +23,9 @@ class OrgController {
         return orgService.getDetail(user, orgId);
     }
 
-    /** 직속 하위 조직(전달 대상) */
-    @GetMapping("/{orgId}/children")
-    List<OrgService.ChildOrg> children(CurrentUser user, @PathVariable long orgId) {
-        return orgService.children(user, orgId);
+    /** 업무를 요청할 수 있는 그룹(자기 그룹 제외 모든 활성 그룹) */
+    @GetMapping("/{orgId}/request-targets")
+    List<OrgService.GroupOption> requestTargets(CurrentUser user, @PathVariable long orgId) {
+        return orgService.requestTargets(user, orgId);
     }
 }

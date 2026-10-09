@@ -1,7 +1,8 @@
 import { Link, useParams } from 'react-router'
-import { api, type ChildOrg, type DeliveryView, type Meeting, type OrgDetail } from '../api'
+import { api, type BoardTask, type DeliveryView, type Meeting, type OrgDetail, type PendingJoinRequest } from '../api'
+import { useAuth } from '../auth'
 import { formatDateTime, MEETING_STATUS_LABEL, ORG_TYPE_LABEL, ROLE_LABEL } from '../labels'
-import { canUpload, useLoad, useOrg } from '../useOrg'
+import { isOwner, useLoad, useOrg } from '../useOrg'
 import { TopBar } from './TopBar'
 
 export function DashboardPage() {
@@ -22,34 +23,74 @@ export function DashboardPage() {
 
 function Dashboard({ org }: { org: OrgDetail }) {
   const [meetings] = useLoad<Meeting[]>(() => api.meetings(org.id), [org.id], '회의 목록을 불러오지 못했습니다.')
-  const [links] = useLoad<{ inbox: DeliveryView[]; children: ChildOrg[] }>(
-    async () => ({ inbox: await api.inbox(org.id), children: await api.children(org.id) }),
-    [org.id],
+  const { state } = useAuth()
+  const myId = state.status === 'signed-in' ? state.me.id : null
+  const [inbox] = useLoad<DeliveryView[]>(() => api.inbox(org.id), [org.id], '')
+  const [board] = useLoad<BoardTask[]>(() => api.board(org.id), [org.id], '')
+  const owner = isOwner(org)
+  const [joins] = useLoad<PendingJoinRequest[]>(
+    () => (owner ? api.joinRequests(org.id) : Promise.resolve([])),
+    [org.id, owner],
     '',
   )
-  const openInbox = links.status === 'ready'
-    ? links.data.inbox.filter((d) => !['DONE', 'NOT_APPLICABLE', 'CANCELLED'].includes(d.status)).length
+  const pendingJoins = joins.status === 'ready' ? joins.data.length : 0
+  // 나에게 맡겨진, 아직 안 끝낸 체크리스트(끝난·취소된 업무 것은 뺀다)
+  const myItems = board.status === 'ready'
+    ? board.data
+        .filter((t) => t.status !== 'DONE' && t.status !== 'CANCELLED')
+        .flatMap((t) => t.items.filter((i) => !i.done && i.assigneeUserId === myId).map((i) => ({ item: i, task: t })))
+    : []
+  const openInbox = inbox.status === 'ready'
+    ? inbox.data.filter((d) => !['DONE', 'NOT_APPLICABLE', 'CANCELLED'].includes(d.status)).length
     : 0
-  const hasChildren = links.status === 'ready' && links.data.children.length > 0
+  const myDepartments = org.departments.filter((d) => org.myDepartmentIds.includes(d.id)).map((d) => d.name)
 
   return (
     <>
       <section className="org-header">
         <span className="chip">{ORG_TYPE_LABEL[org.type]} · {org.term} 임기</span>
         <h2>{org.name}</h2>
-        <p className="muted small">내 역할: {org.myRoles.map((r) => ROLE_LABEL[r]).join(', ')}</p>
+        {org.adminView ? (
+          <p className="notice small">서비스 관리자 열람 중입니다. 읽기만 할 수 있습니다.</p>
+        ) : (
+          <p className="muted small">
+            내 직책: {org.myPositionName ?? (org.myRole ? ROLE_LABEL[org.myRole] : '-')}
+            {myDepartments.length > 0 && ` · ${myDepartments.join(', ')}`}
+          </p>
+        )}
       </section>
 
       <div className="actions-row">
-        {canUpload(org) && (
+        {owner && (
           <Link to={`/orgs/${org.id}/meetings/new`} className="button primary-link">회의록 올리기</Link>
         )}
         <Link to={`/orgs/${org.id}/board`} className="ghost">부서 업무보드</Link>
         <Link to={`/orgs/${org.id}/inbox`} className="ghost">
           받은 요청{openInbox > 0 && <span className="count-badge">{openInbox}</span>}
         </Link>
-        {hasChildren && <Link to={`/orgs/${org.id}/sent`} className="ghost">보낸 요청</Link>}
+        <Link to={`/orgs/${org.id}/sent`} className="ghost">보낸 요청</Link>
+        <Link to={`/orgs/${org.id}/members`} className="ghost">
+          구성원·부서·직책{pendingJoins > 0 && <span className="count-badge" title="가입 신청">{pendingJoins}</span>}
+        </Link>
       </div>
+
+      {myItems.length > 0 && (
+        <section className="card">
+          <h3>나에게 맡겨진 일 <span className="muted small">{myItems.length}</span></h3>
+          <ul className="row-list">
+            {myItems.map(({ item, task }) => (
+              <li key={item.id}>
+                <Link to={`/orgs/${org.id}/board/${task.departmentId ?? 'none'}`} className="row-link">
+                  <span>
+                    <strong>{item.title}</strong>
+                    <span className="muted small block">{task.departmentName} · {task.title} · 기한 {task.dueDate ?? '미정'}</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="card">
         <h3>회의</h3>

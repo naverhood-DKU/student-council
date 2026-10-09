@@ -17,7 +17,7 @@ import kr.dku.councilflow.common.error.ErrorCode;
 import kr.dku.councilflow.meeting.Meeting;
 import kr.dku.councilflow.user.AppUser;
 
-/** 회의 결정. AI가 만든 후보는 PROPOSED 로 시작하고, 회의 책임자가 승인해야 확정된다(원칙 1). */
+/** 회의 결정. AI가 만든 후보는 PROPOSED 로 시작하고, 그룹 회장(owner)이 승인해야 확정된다(원칙 1). */
 @Entity
 @Table(name = "decision")
 public class Decision extends BaseEntity {

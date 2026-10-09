@@ -16,11 +16,10 @@ import kr.dku.councilflow.meeting.Segment;
 import kr.dku.councilflow.meeting.SegmentRepository;
 import kr.dku.councilflow.org.DepartmentRepository;
 import kr.dku.councilflow.user.AppUserRepository;
-import kr.dku.councilflow.user.MembershipRole;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** AI 후보 조회, 승인 전 수정, 승인. 승인과 수정은 회의 조직의 회의 책임자만 할 수 있다. */
+/** AI 후보 조회, 승인 전 수정, 승인. 승인과 수정은 회의를 연 그룹의 owner(회장)만 할 수 있다. */
 @Service
 public class DecisionService {
 
@@ -82,7 +81,7 @@ public class DecisionService {
                 meeting.getTranscriptVersion());
         return new Proposals(
                 MeetingService.MeetingView.of(meeting),
-                departments.findByOrganizationIdOrderById(meeting.getOrgId()).stream()
+                departments.findByOrganizationIdAndActiveTrueOrderById(meeting.getOrgId()).stream()
                         .map(d -> new DepartmentOption(d.getId(), d.getName())).toList(),
                 transcript.stream().map(DecisionViews.SegmentView::of).toList(),
                 views.decisions(decisions.findByMeetingIdOrderById(meetingId), transcript));
@@ -122,7 +121,7 @@ public class DecisionService {
 
     private Decision loadForChair(CurrentUser user, long decisionId) {
         Decision decision = decisions.findById(decisionId).orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN));
-        accessGuard.requireRole(user, decision.getMeeting().getOrgId(), MembershipRole.MEETING_CHAIR);
+        accessGuard.requireOwner(user, decision.getMeeting().getOrgId());
         return decision;
     }
 

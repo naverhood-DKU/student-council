@@ -29,24 +29,23 @@ import kr.dku.councilflow.org.DepartmentRepository;
 import kr.dku.councilflow.org.Organization;
 import kr.dku.councilflow.org.OrganizationRepository;
 import kr.dku.councilflow.user.AppUserRepository;
-import kr.dku.councilflow.user.MembershipRole;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 
 /**
- * 조직 간 전달(단계 2). 범위는 한 단계: 결정을 낸 조직 → 직속 하위 조직.
+ * 그룹 간 업무 요청. owner(회장)는 자기 그룹을 뺀 모든 그룹에 승인된 결정으로 업무를 요청할 수 있다.
+ * 총학·단과대·학과 단계는 표시용이고 요청 방향을 제한하지 않는다.
  *
  * 누가 무엇을 하나
- * - 보낸 조직의 회의 책임자: 전달 만들기, 기한 변경, 확인 요청에 답변, 취소, 결과 확정·반려
- * - 받은 조직의 회의 책임자·조직 관리자: 수락, 확인 요청(사유 필수), 해당 없음, 내부 담당 부서 지정, 시작, 결과 제출
- * - 받은 조직에서 담당 부서로 지정된 부서원: 시작, 결과 제출
- * - 보낸 조직 소속은 자기가 보낸 전달과 그 제출물만, 받은 조직 소속은 받은 것만 본다.
+ * - 보낸 그룹의 owner: 요청 만들기, 기한 변경, 확인 요청에 답변, 취소, 결과 승인·반려
+ * - 받은 그룹의 owner: 수락, 확인 요청(사유 필수), 해당 없음, 내부 담당 부서 지정, 시작, 결과 제출
+ * - 받은 그룹에서 담당 부서로 지정된 부서의 editor(부장): 시작, 결과 제출
+ * - viewer(부원)는 조회만. 보낸 그룹 소속은 자기가 보낸 요청과 그 제출물만, 받은 그룹 소속은 받은 것만 본다.
+ * - 서비스 관리자는 모든 그룹의 요청을 읽기 전용으로 본다.
  */
 @Service
 public class DeliveryService {
-
-    private static final MembershipRole[] RECEIVER_MANAGERS = {MembershipRole.MEETING_CHAIR, MembershipRole.ORG_ADMIN};
 
     private final DeliveryRepository deliveries;
     private final SubmissionRepository submissions;
@@ -108,18 +107,19 @@ public class DeliveryService {
     public DecisionDeliveries send(CurrentUser user, long decisionId, CreateDeliveries request) {
         Decision decision = decisions.findById(decisionId).orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN));
         Organization from = decision.getMeeting().getOrganization();
-        accessGuard.requireRole(user, from.getId(), MembershipRole.MEETING_CHAIR);
+        accessGuard.requireOwner(user, from.getId());
         if (decision.getStatus() != DecisionStatus.APPROVED) {
             throw new ApiException(ErrorCode.INVALID_TRANSITION, "승인된 결정만 전달할 수 있습니다.");
         }
 
         List<Organization> targets = new ArrayList<>();
         for (Long targetId : new LinkedHashSet<>(request.targetOrgIds())) {
+            if (targetId.equals(from.getId())) {
+                throw new ApiException(ErrorCode.VALIDATION_FAILED, "자기 그룹에는 요청할 수 없습니다. 업무보드를 쓰세요.");
+            }
             Organization target = organizations.findById(targetId)
                     .filter(Organization::isActive)
-                    .filter(o -> o.getParent() != null && o.getParent().getId().equals(from.getId()))
-                    .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_FAILED,
-                            "직속 하위 조직에만 전달할 수 있습니다."));
+                    .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_FAILED, "요청할 수 없는 그룹입니다."));
             targets.add(target);
         }
         List<String> already = targets.stream()
@@ -127,7 +127,7 @@ public class DeliveryService {
                 .map(Organization::getName)
                 .toList();
         if (!already.isEmpty()) {
-            throw new ApiException(ErrorCode.DUPLICATE, "이미 전달한 조직이 있습니다: " + String.join(", ", already));
+            throw new ApiException(ErrorCode.DUPLICATE, "이미 요청한 그룹이 있습니다: " + String.join(", ", already));
         }
 
         String message = blankToNull(request.message());
@@ -162,11 +162,11 @@ public class DeliveryService {
         Map<String, Object> before = snapshot(delivery);
 
         if (body.has("internalDepartmentId")) {
-            actor.requireReceiverManager();
+            actor.requireReceiverOwner();
             delivery.assignInternalDepartment(internalDepartment(body.get("internalDepartmentId"), delivery));
         }
         if (body.has("dueDate")) {
-            actor.requireSenderChair();
+            actor.requireSenderOwner();
             delivery.changeDueDate(date(body.get("dueDate")), clock.instant());
         }
         if (body.has("status")) {
@@ -184,18 +184,18 @@ public class DeliveryService {
                                      String reply) {
         switch (target) {
             case ACCEPTED -> {
-                actor.requireReceiverManager();
+                actor.requireReceiverOwner();
                 delivery.accept();
             }
             case CLARIFICATION_REQUESTED -> {
-                actor.requireReceiverManager();
+                actor.requireReceiverOwner();
                 if (reason == null) {
                     throw new ApiException(ErrorCode.VALIDATION_FAILED, "확인 요청 사유를 적어 주세요.");
                 }
                 delivery.requestClarification(reason);
             }
             case NOT_APPLICABLE -> {
-                actor.requireReceiverManager();
+                actor.requireReceiverOwner();
                 delivery.markNotApplicable(reason);
             }
             case IN_PROGRESS -> {
@@ -206,14 +206,14 @@ public class DeliveryService {
                 delivery.start();
             }
             case PENDING -> {
-                actor.requireSenderChair();
+                actor.requireSenderOwner();
                 if (reply == null) {
                     throw new ApiException(ErrorCode.VALIDATION_FAILED, "확인 요청에 대한 답변을 적어 주세요.");
                 }
                 delivery.answerClarification(reply);
             }
             case CANCELLED -> {
-                actor.requireSenderChair();
+                actor.requireSenderOwner();
                 delivery.cancel(reason);
             }
             case SUBMITTED, DONE -> throw new ApiException(ErrorCode.VALIDATION_FAILED,
@@ -251,7 +251,7 @@ public class DeliveryService {
         Submission submission = submissions.findById(submissionId)
                 .orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN));
         Delivery delivery = submission.getDelivery();
-        actorOf(user, delivery).requireSenderChair();
+        actorOf(user, delivery).requireSenderOwner();
         String comment = blankToNull(request.comment());
         if (!request.approve() && comment == null) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "반려할 때는 이유를 적어 주세요.");
@@ -323,26 +323,25 @@ public class DeliveryService {
 
     private record Actor(OrgAccess sender, OrgAccess receiver) {
 
-        void requireSenderChair() {
-            if (sender == null || !sender.hasAnyRole(MembershipRole.MEETING_CHAIR)) {
-                throw new ApiException(ErrorCode.FORBIDDEN, "보낸 조직의 회의 책임자만 할 수 있습니다.");
+        void requireSenderOwner() {
+            if (sender == null || !sender.isOwner()) {
+                throw new ApiException(ErrorCode.FORBIDDEN, "보낸 그룹의 회장(owner)만 할 수 있습니다.");
             }
         }
 
-        void requireReceiverManager() {
-            if (receiver == null || !receiver.hasAnyRole(RECEIVER_MANAGERS)) {
-                throw new ApiException(ErrorCode.FORBIDDEN, "받은 조직의 회의 책임자나 조직 관리자만 할 수 있습니다.");
+        void requireReceiverOwner() {
+            if (receiver == null || !receiver.isOwner()) {
+                throw new ApiException(ErrorCode.FORBIDDEN, "받은 그룹의 회장(owner)만 할 수 있습니다.");
             }
         }
 
-        /** 받은 조직의 관리자, 또는 내부 담당 부서로 지정된 부서의 소속 */
+        /** 받은 그룹의 owner, 또는 내부 담당 부서로 지정된 부서의 editor */
         void requireReceiverWorker(Delivery delivery) {
-            boolean manager = receiver != null && receiver.hasAnyRole(RECEIVER_MANAGERS);
             Department assigned = delivery.getInternalDepartment();
-            boolean assignedMember = receiver != null && assigned != null
-                    && receiver.belongsToDepartment(assigned.getId());
-            if (!manager && !assignedMember) {
-                throw new ApiException(ErrorCode.FORBIDDEN, "받은 조직의 관리자나 담당 부서만 할 수 있습니다.");
+            boolean allowed = receiver != null
+                    && (receiver.isOwner() || (assigned != null && receiver.canWorkFor(assigned.getId())));
+            if (!allowed) {
+                throw new ApiException(ErrorCode.FORBIDDEN, "받은 그룹의 회장이나 담당 부서의 부장(editor)만 할 수 있습니다.");
             }
         }
 
@@ -361,8 +360,7 @@ public class DeliveryService {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "internalDepartmentId 는 숫자이거나 null 이어야 합니다.");
         }
         long receiverOrgId = delivery.getToOrganization().getId();
-        return departments.findById(node.asLong())
-                .filter(d -> d.getOrganization().getId() == receiverOrgId)
+        return departments.findActiveInOrg(node.asLong(), receiverOrgId)
                 .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_FAILED, "받은 조직의 부서가 아닙니다."));
     }
 

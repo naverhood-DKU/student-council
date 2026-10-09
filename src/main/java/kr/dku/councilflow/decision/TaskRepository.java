@@ -21,4 +21,7 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
              order by t.dueDate asc nulls last, t.id
             """)
     List<Task> findBoardTasks(Long orgId);
+
+    /** 그 부서가 맡은 업무 중 상태가 statuses 가 아닌 것의 수(부서를 없애도 되는지 볼 때) */
+    long countByDepartmentIdAndStatusNotIn(Long departmentId, Collection<TaskStatus> statuses);
 }

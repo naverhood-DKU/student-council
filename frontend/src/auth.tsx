@@ -10,6 +10,8 @@ interface AuthContextValue {
   state: AuthState
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  /** 내 정보(소속·가입 신청)를 다시 불러온다 */
+  refresh: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -44,12 +46,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ status: 'signed-in', me })
   }, [])
 
+  const refresh = useCallback(async () => {
+    const me = await api.me()
+    setState({ status: 'signed-in', me })
+  }, [])
+
   const logout = useCallback(() => {
     tokenStore.clear()
     setState({ status: 'signed-out' })
   }, [])
 
-  const value = useMemo(() => ({ state, login, logout }), [state, login, logout])
+  const value = useMemo(() => ({ state, login, logout, refresh }), [state, login, logout, refresh])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

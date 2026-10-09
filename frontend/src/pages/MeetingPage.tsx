@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { api, type Job, type MeetingDetail, type OrgDetail } from '../api'
 import { formatDateTime, JOB_STATUS_LABEL, jobErrorText, MEETING_STATUS_LABEL } from '../labels'
-import { canUpload, errorMessage, useLoad, useOrg } from '../useOrg'
+import { errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
 import { ReviewPanel } from './ReviewPanel'
 import { TopBar } from './TopBar'
 
@@ -102,7 +102,7 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
         </div>
       )}
 
-      {canUpload(org) && (meeting.status === 'READY' || meeting.status === 'ANALYSIS_FAILED') && (
+      {isOwner(org) && (meeting.status === 'READY' || meeting.status === 'ANALYSIS_FAILED') && (
         <div className="actions-row">
           <button type="button" className="primary inline" onClick={startAnalysis} disabled={requesting}>
             {meeting.status === 'READY' ? '분석 시작' : '다시 분석'}

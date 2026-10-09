@@ -3,7 +3,10 @@ package kr.dku.councilflow.delivery;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -119,9 +122,10 @@ class DeliveryScenarioTest extends IntegrationTest {
 
     @Test
     void 단과대가_학과_두_곳에_전달하고_집계한다() throws Exception {
-        // 전달 대상은 직속 하위 조직
-        mvc.perform(get("/api/orgs/{id}/children", college).header(HttpHeaders.AUTHORIZATION, collegeChair))
-                .andExpect(jsonPath("$[*].name", contains("컴퓨터공학과 학생회", "소프트웨어학과 학생회")));
+        // 요청할 수 있는 그룹: 자기 그룹을 뺀 모든 그룹(상위 총학 포함)
+        mvc.perform(get("/api/orgs/{id}/request-targets", college).header(HttpHeaders.AUTHORIZATION, collegeChair))
+                .andExpect(jsonPath("$[*].name", hasItems("총학생회", "컴퓨터공학과 학생회", "소프트웨어학과 학생회")))
+                .andExpect(jsonPath("$[*].name", not(hasItem("AI 융합대학 학생회"))));
 
         String sent = sendToBothDepartments();
         assertThat(num(sent, "$.tally.total")).isEqualTo(2);
@@ -321,16 +325,17 @@ class DeliveryScenarioTest extends IntegrationTest {
     }
 
     @Test
-    void 전달은_승인된_결정만_직속_하위_조직에_한_번씩() throws Exception {
+    void 요청은_승인된_결정만_자기_그룹_말고_다른_그룹에_한_번씩() throws Exception {
         Map<String, Object> body = Map.of("targetOrgIds", List.of(cse), "requestType", "COOPERATE");
         // 승인 안 된 결정
         send(collegeChair, pendingDecision, body).andExpect(status().isConflict());
-        // 직속 하위가 아닌 조직(총학은 상위, 단과대 자신)
-        send(collegeChair, approvedDecision, Map.of("targetOrgIds", List.of(union), "requestType", "COOPERATE"))
-                .andExpect(status().isBadRequest());
+        // 자기 그룹에는 요청할 수 없다.
         send(collegeChair, approvedDecision, Map.of("targetOrgIds", List.of(college), "requestType", "COOPERATE"))
                 .andExpect(status().isBadRequest());
-        // 보낸 조직의 회의 책임자가 아니면 403
+        // 단계와 상관없이 상위 그룹(총학)에도 요청할 수 있다.
+        send(collegeChair, approvedDecision, Map.of("targetOrgIds", List.of(union), "requestType", "INFORM"))
+                .andExpect(status().isCreated());
+        // 보낸 그룹의 owner 가 아니면 403(editor, 다른 그룹 owner)
         send(bearer("ai.plan"), approvedDecision, body).andExpect(status().isForbidden());
         send(bearer("ce"), approvedDecision, body).andExpect(status().isForbidden());
         // 같은 조직에 두 번은 안 된다.

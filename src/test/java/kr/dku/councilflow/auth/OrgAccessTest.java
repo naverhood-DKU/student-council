@@ -10,7 +10,6 @@ import kr.dku.councilflow.user.AppUser;
 import kr.dku.councilflow.user.AppUserRepository;
 import kr.dku.councilflow.user.Membership;
 import kr.dku.councilflow.user.MembershipRepository;
-import kr.dku.councilflow.user.MembershipRole;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -38,7 +37,8 @@ class OrgAccessTest extends IntegrationTest {
                 .andExpect(jsonPath("$.id").value(cse))
                 .andExpect(jsonPath("$.name").value("컴퓨터공학과 학생회"))
                 .andExpect(jsonPath("$.departments.length()").value(3))
-                .andExpect(jsonPath("$.myRoles").isArray());
+                .andExpect(jsonPath("$.myRole").value("OWNER"))
+                .andExpect(jsonPath("$.adminView").value(false));
     }
 
     @Test
@@ -72,7 +72,7 @@ class OrgAccessTest extends IntegrationTest {
         Organization sw = organizationRepository.findById(orgId("소프트웨어학과 학생회")).orElseThrow();
         AppUser former = userRepository.save(
                 new AppUser("former.sw@councilflow.test", passwordEncoder.encode(SEED_PASSWORD), "지난 임기 회장"));
-        Membership membership = new Membership(former, sw, MembershipRole.MEETING_CHAIR, null, "2025");
+        Membership membership = Membership.owner(former, sw, "2025");
         membership.deactivate();
         membershipRepository.save(membership);
 

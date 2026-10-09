@@ -18,7 +18,7 @@ interface AddTaskFormProps {
   onCancel: () => void
 }
 
-/** 회의 책임자가 업무를 직접 추가하는 작은 양식 */
+/** 회장(owner)이 업무를 직접 추가하는 작은 양식 */
 export function AddTaskForm({ departments, decisionId, decisions, onDone, onCancel }: AddTaskFormProps) {
   const [chosenDecision, setChosenDecision] = useState<number | null>(decisionId ?? decisions?.[0]?.id ?? null)
   const [title, setTitle] = useState('')

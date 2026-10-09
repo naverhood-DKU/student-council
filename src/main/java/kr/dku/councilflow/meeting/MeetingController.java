@@ -25,7 +25,7 @@ class MeetingController {
         this.meetingService = meetingService;
     }
 
-    /** 텍스트 회의록으로 회의 생성(회의 책임자·조직 관리자). */
+    /** 텍스트 회의록으로 회의 생성(그룹 owner). */
     @PostMapping("/api/meetings")
     @ResponseStatus(HttpStatus.CREATED)
     MeetingService.MeetingDetail create(CurrentUser user, @Valid @RequestBody MeetingService.CreateTextMeeting request) {

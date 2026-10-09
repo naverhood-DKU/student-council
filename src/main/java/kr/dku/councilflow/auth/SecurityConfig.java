@@ -12,7 +12,7 @@ import org.springframework.security.web.SecurityFilterChain;
 
 /**
  * 인증 규칙.
- * - /api/auth/login, /actuator/health 만 공개
+ * - /api/auth/login, /api/auth/signup(회원가입), /actuator/health 만 공개
  * - 나머지 /api/**, /actuator/** 는 Bearer 토큰 필요
  * - 그 밖의 경로는 React 정적 파일(로그인 화면 포함)이라 공개. 데이터는 모두 /api 뒤에 있다.
  * 조직 단위 인가는 여기서 하지 않고 OrgAccessGuard 가 요청마다 DB로 확인한다.
@@ -32,7 +32,7 @@ class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/signup").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/api/**", "/actuator/**").authenticated()
                         .anyRequest().permitAll())

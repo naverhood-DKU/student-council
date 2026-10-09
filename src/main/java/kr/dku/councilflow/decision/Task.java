@@ -20,7 +20,7 @@ import kr.dku.councilflow.org.Department;
 /**
  * 결정에 딸린 업무. 결정이 승인되기 전에는 PROPOSED 라서 업무보드에 나오지 않는다.
  * department/dueDate 는 회의에서 명시된 값만, 모르면 null(원칙 2). 추천은 suggestedDepartment 에만 넣는다.
- * 회의 책임자가 직접 추가한 업무는 origin=MANUAL 이고 근거 발언이 없을 수 있다.
+ * 회장이 직접 추가한 업무는 origin=MANUAL 이고 근거 발언이 없을 수 있다.
  */
 @Entity
 @Table(name = "task")
@@ -88,7 +88,7 @@ public class Task extends BaseEntity {
         return task;
     }
 
-    /** 회의 책임자가 직접 추가하는 업무. 결정이 이미 승인됐으면 만든 뒤 activate() 로 바로 업무보드에 올린다. */
+    /** 회장이 직접 추가하는 업무. 결정이 이미 승인됐으면 만든 뒤 activate() 로 바로 업무보드에 올린다. */
     public static Task manual(Decision decision, String title, Department department, LocalDate dueDate) {
         Task task = proposal(decision, title, department, dueDate, null, null, List.of(), EvidenceStatus.OK,
                 List.of());

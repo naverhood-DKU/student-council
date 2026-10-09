@@ -1,7 +1,8 @@
 import { Link, Navigate } from 'react-router'
 import type { MembershipView } from '../api'
-import { ORG_TYPE_LABEL, ROLE_LABEL } from '../labels'
+import { ORG_TYPE_LABEL, positionLabel } from '../labels'
 import { useAuth } from '../auth'
+import { JoinPanel } from './JoinPanel'
 import { TopBar } from './TopBar'
 
 interface OrgChoice {
@@ -16,16 +17,23 @@ export function OrgSelectPage() {
   if (state.status !== 'signed-in') return null
 
   const choices = groupByOrg(state.me.memberships)
-  // 소속이 하나뿐이면 고를 필요 없이 바로 들어간다.
-  if (choices.length === 1) return <Navigate to={`/orgs/${choices[0].orgId}`} replace />
+  const admin = state.me.serviceAdmin
+  // 소속이 하나뿐이고 볼 가입 신청도 없으면 바로 들어간다. 소속 없는 관리자는 관리자 화면으로.
+  if (!admin && choices.length === 1 && state.me.joinRequests.length === 0) return <Navigate to={`/orgs/${choices[0].orgId}`} replace />
+  if (admin && choices.length === 0) return <Navigate to="/admin" replace />
 
   return (
     <>
       <TopBar />
       <main className="page">
-        <h2>조직 선택</h2>
+        <h2>그룹 선택</h2>
+        {admin && (
+          <p><Link to="/admin" className="ghost">서비스 관리 화면으로</Link></p>
+        )}
         {choices.length === 0 ? (
-          <p className="empty">활성 소속이 없습니다. 학생회 관리자에게 초대를 요청하세요.</p>
+          <p className="empty">
+            아직 소속된 그룹이 없습니다. 가입 신청을 회장이 승인하면 여기에 그룹이 나타납니다.
+          </p>
         ) : (
           <ul className="card-list">
             {choices.map((choice) => (
@@ -39,6 +47,7 @@ export function OrgSelectPage() {
             ))}
           </ul>
         )}
+        <JoinPanel />
       </main>
     </>
   )
@@ -48,7 +57,7 @@ function groupByOrg(memberships: MembershipView[]): OrgChoice[] {
   const byOrg = new Map<number, OrgChoice>()
   for (const m of memberships) {
     const choice = byOrg.get(m.orgId) ?? { orgId: m.orgId, orgName: m.orgName, orgType: m.orgType, roles: [] }
-    const label = m.departmentName ? `${ROLE_LABEL[m.role]}(${m.departmentName})` : ROLE_LABEL[m.role]
+    const label = m.departmentName ? `${positionLabel(m)}(${m.departmentName})` : positionLabel(m)
     choice.roles.push(label)
     byOrg.set(m.orgId, choice)
   }

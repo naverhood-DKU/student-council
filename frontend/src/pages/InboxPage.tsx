@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { api, ApiError, type DeliveryPatch, type DeliveryView, type OrgDetail } from '../api'
 import { DELIVERY_STATUS_LABEL, formatDateTime, REQUEST_TYPE_LABEL } from '../labels'
-import { canManageReceived, errorMessage, useLoad, useOrg } from '../useOrg'
+import { canWorkFor, errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
 import { TopBar } from './TopBar'
 
 /**
@@ -39,7 +39,7 @@ function Inbox({ org }: { org: OrgDetail }) {
   return (
     <>
       <h2>받은 요청 <span className="muted small">{open.length}건 진행 중</span></h2>
-      <p className="muted small">상위 학생회가 보낸 결정과 요청입니다. 보낸 조직의 회의록은 보이지 않습니다.</p>
+      <p className="muted small">다른 학생회가 보낸 결정과 요청입니다. 보낸 그룹의 회의록은 보이지 않습니다.</p>
       {open.length === 0 && <p className="empty card">처리할 요청이 없습니다.</p>}
       <div className="stack">
         {open.map((d) => (
@@ -63,8 +63,8 @@ function Inbox({ org }: { org: OrgDetail }) {
 type Panel = 'none' | 'clarify' | 'not-applicable' | 'submit'
 
 function InboxCard({ delivery: d, org, onChanged }: { delivery: DeliveryView; org: OrgDetail; onChanged: () => void }) {
-  const manager = canManageReceived(org)
-  const worker = manager || (d.internalDepartmentId != null && org.myDepartmentIds.includes(d.internalDepartmentId))
+  const manager = isOwner(org)
+  const worker = canWorkFor(org, d.internalDepartmentId)
   const [panel, setPanel] = useState<Panel>('none')
   const [text, setText] = useState('')
   const [link, setLink] = useState('')
@@ -171,7 +171,7 @@ function InboxCard({ delivery: d, org, onChanged }: { delivery: DeliveryView; or
         </div>
       )}
       {d.status === 'SUBMITTED' && <p className="muted small">보낸 조직이 결과를 검토하고 있습니다.</p>}
-      {d.status === 'PENDING' && !manager && <p className="muted small">회장·조직 관리자가 수락하면 시작할 수 있습니다.</p>}
+      {d.status === 'PENDING' && !manager && <p className="muted small">회장(owner)이 수락하면 시작할 수 있습니다.</p>}
 
       {panel === 'clarify' && (
         <div className="panel">

@@ -69,8 +69,8 @@ class AuthTest extends IntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("ce"))
                 .andExpect(jsonPath("$.memberships[*].orgName", hasItem("컴퓨터공학과 학생회")))
-                .andExpect(jsonPath("$.memberships[*].role", hasItem("MEETING_CHAIR")))
-                .andExpect(jsonPath("$.memberships[*].role", hasItem("ORG_ADMIN")));
+                .andExpect(jsonPath("$.memberships[*].role", hasItem("OWNER")))
+                .andExpect(jsonPath("$.serviceAdmin").value(false));
     }
 
     @Test

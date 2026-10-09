@@ -20,6 +20,10 @@ public class AppUser extends BaseEntity {
     @Column(nullable = false, length = 50)
     private String name;
 
+    /** 서비스 관리자: 그룹 만들기, owner 부여·회수, 모든 그룹 읽기 전용 열람 */
+    @Column(nullable = false)
+    private boolean serviceAdmin;
+
     protected AppUser() {
     }
 
@@ -27,6 +31,14 @@ public class AppUser extends BaseEntity {
         this.email = normalizeEmail(email);
         this.passwordHash = passwordHash;
         this.name = name;
+    }
+
+    public void grantServiceAdmin() {
+        this.serviceAdmin = true;
+    }
+
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
     }
 
     public static String normalizeEmail(String email) {
@@ -43,5 +55,9 @@ public class AppUser extends BaseEntity {
 
     public String getName() {
         return name;
+    }
+
+    public boolean isServiceAdmin() {
+        return serviceAdmin;
     }
 }

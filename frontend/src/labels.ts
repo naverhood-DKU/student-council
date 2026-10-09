@@ -19,10 +19,20 @@ export const ORG_TYPE_LABEL: Record<OrgType, string> = {
 }
 
 export const ROLE_LABEL: Record<MembershipRole, string> = {
-  ORG_ADMIN: '조직 관리자',
-  MEETING_CHAIR: '회의 책임자',
-  DEPT_MEMBER: '부서원',
-  FINANCE_REVIEWER: '재정 담당',
+  OWNER: '회장(owner)',
+  EDITOR: '부장(editor)',
+  VIEWER: '부원(viewer)',
+}
+
+/** 직책의 권한 수준 */
+export const LEVEL_LABEL: Record<'EDITOR' | 'VIEWER', string> = {
+  EDITOR: '부장급',
+  VIEWER: '부원급',
+}
+
+/** 화면에 보이는 직책: 직책 이름이 있으면 그것, 없으면(회장) 역할 이름 */
+export function positionLabel(m: { role: MembershipRole; positionName: string | null }): string {
+  return m.positionName ?? ROLE_LABEL[m.role]
 }
 
 export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {

@@ -77,7 +77,7 @@ export function MeetingNewPage() {
         <h2>회의록 올리기</h2>
         <p className="muted small">
           한 줄에 발언 하나씩 적습니다. "이름: 내용" 형식이면 이름을 화자로 따로 저장합니다.
-          AI는 결정·업무 <strong>후보</strong>만 만들고, 회의 책임자가 승인해야 확정됩니다.
+          AI는 결정·업무 <strong>후보</strong>만 만들고, 회장(owner)이 승인해야 확정됩니다.
         </p>
         <form onSubmit={onSubmit} className="card">
           <label>

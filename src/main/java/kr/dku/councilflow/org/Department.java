@@ -24,6 +24,10 @@ public class Department extends BaseEntity {
     @Column(length = 500)
     private String roleKeywords;
 
+    /** 없앤 부서는 false. 지난 업무·전달 기록이 가리키므로 지우지 않고 목록·선택에서만 숨긴다. */
+    @Column(nullable = false)
+    private boolean active = true;
+
     protected Department() {
     }
 
@@ -31,6 +35,28 @@ public class Department extends BaseEntity {
         this.organization = organization;
         this.name = name;
         this.roleKeywords = roleKeywords;
+    }
+
+    public void rename(String name) {
+        this.name = name;
+    }
+
+    public void changeRoleKeywords(String roleKeywords) {
+        this.roleKeywords = roleKeywords;
+    }
+
+    public void deactivate() {
+        this.active = false;
+    }
+
+    /** 없앴던 부서를 같은 이름으로 다시 만들 때 */
+    public void reactivate(String roleKeywords) {
+        this.active = true;
+        this.roleKeywords = roleKeywords;
+    }
+
+    public boolean isActive() {
+        return active;
     }
 
     public Organization getOrganization() {

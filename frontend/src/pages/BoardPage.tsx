@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { api, ApiError, type BoardTask, type DecisionOption, type OrgDetail, type TaskPatch, type TaskStatus } from '../api'
-import { isOverdue, TASK_STATUS_LABEL } from '../labels'
-import { errorMessage, isChair, useLoad, useOrg } from '../useOrg'
-import { AddTaskForm, canClearDepartment } from './TaskForms'
+import { api, type BoardTask, type DecisionOption, type Member, type OrgDetail } from '../api'
+import { useAuth } from '../auth'
+import { isOverdue, positionLabel } from '../labels'
+import { errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
+import { AddTaskForm } from './TaskForms'
 import { TopBar } from './TopBar'
 
-const COLUMNS: { key: string; label: string; statuses: TaskStatus[] }[] = [
-  { key: 'todo', label: '할 일', statuses: ['UNASSIGNED', 'ASSIGNED'] },
-  { key: 'doing', label: '진행', statuses: ['IN_PROGRESS'] },
-  { key: 'submitted', label: '결과 제출', statuses: ['SUBMITTED'] },
-  { key: 'done', label: '완료', statuses: ['DONE'] },
-]
-
+/**
+ * 업무보드 첫 화면: 그룹 → 부서 → 사람 트리. 부서를 누르면 그 부서에 맡겨진 업무(DepartmentBoardPage)로 간다.
+ * 부서마다 단계별 업무 수, 기한 지난 업무, 나에게 맡겨진 체크리스트 수를 보여 준다.
+ */
 export function BoardPage() {
   const orgId = Number(useParams().orgId)
   const [org] = useOrg(orgId)
@@ -20,42 +18,53 @@ export function BoardPage() {
   return (
     <>
       <TopBar />
-      <main className="page wide">
+      <main className="page">
         <p><Link to={`/orgs/${orgId}`} className="muted small">← 대시보드</Link></p>
         {org.status === 'loading' && <p className="page-message">불러오는 중…</p>}
         {org.status === 'error' && <p className="error" role="alert">{org.message}</p>}
-        {org.status === 'ready' && <Board org={org.data} />}
+        {org.status === 'ready' && <BoardTree org={org.data} />}
       </main>
     </>
   )
 }
 
-function Board({ org }: { org: OrgDetail }) {
-  const [tasks, reload] = useLoad<BoardTask[]>(() => api.board(org.id), [org.id], '업무를 불러오지 못했습니다.')
-  const [filter, setFilter] = useState<string>(
-    org.myDepartmentIds.length === 1 ? String(org.myDepartmentIds[0]) : 'all',
+interface TreeData {
+  tasks: BoardTask[]
+  members: Member[]
+}
+
+interface Counts {
+  todo: number
+  doing: number
+  submitted: number
+  done: number
+  overdue: number
+  myOpenItems: number
+}
+
+function count(tasks: BoardTask[], myId: number | null): Counts {
+  const open = tasks.filter((t) => t.status !== 'CANCELLED')
+  return {
+    todo: open.filter((t) => t.status === 'UNASSIGNED' || t.status === 'ASSIGNED').length,
+    doing: open.filter((t) => t.status === 'IN_PROGRESS').length,
+    submitted: open.filter((t) => t.status === 'SUBMITTED').length,
+    done: open.filter((t) => t.status === 'DONE').length,
+    overdue: open.filter((t) => isOverdue(t.dueDate, t.status)).length,
+    myOpenItems: open.flatMap((t) => t.items).filter((i) => !i.done && i.assigneeUserId === myId).length,
+  }
+}
+
+function BoardTree({ org }: { org: OrgDetail }) {
+  const { state } = useAuth()
+  const myId = state.status === 'signed-in' ? state.me.id : null
+  const [data, reload] = useLoad<TreeData>(
+    async () => ({ tasks: await api.board(org.id), members: await api.members(org.id) }),
+    [org.id],
+    '업무를 불러오지 못했습니다.',
   )
-  const [overdueOnly, setOverdueOnly] = useState(false)
   const [adding, setAdding] = useState<DecisionOption[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const chair = isChair(org)
-
-  async function update(task: BoardTask, change: TaskPatch): Promise<boolean> {
-    setError(null)
-    try {
-      await api.updateTask(task, change)
-      reload()
-      return true
-    } catch (e) {
-      setError(
-        e instanceof ApiError && e.code === 'VERSION_CONFLICT'
-          ? '다른 사람이 먼저 바꿨습니다. 최신 상태를 다시 불러왔습니다.'
-          : errorMessage(e, '업무를 바꾸지 못했습니다.'),
-      )
-      reload()
-      return false
-    }
-  }
+  const chair = isOwner(org)
 
   async function openAdd() {
     setError(null)
@@ -66,38 +75,29 @@ function Board({ org }: { org: OrgDetail }) {
     }
   }
 
-  const all = tasks.status === 'ready' ? tasks.data : []
-  const visible = all.filter(
-    (t) =>
-      (filter === 'all' || String(t.departmentId) === filter) &&
-      (!overdueOnly || isOverdue(t.dueDate, t.status)),
-  )
-  const cancelled = visible.filter((t) => t.status === 'CANCELLED')
-  const overdueCount = all.filter((t) => isOverdue(t.dueDate, t.status)).length
+  if (data.status === 'loading') return <p className="page-message">불러오는 중…</p>
+  if (data.status === 'error') return <p className="error" role="alert">{data.message}</p>
+  const { tasks, members } = data.data
+  const owners = members.filter((m) => m.role === 'OWNER')
+  const unassigned = tasks.filter((t) => t.departmentId == null && t.status !== 'CANCELLED')
+  const noDepartment = members.filter((m) => m.role !== 'OWNER' && m.departmentId == null)
+  // 없앤 부서가 맡았던 업무(끝난 업무만 남는다)도 따로 모아 보여 준다.
+  const activeIds = new Set(org.departments.map((d) => d.id))
+  const retired = [...new Map(
+    tasks.filter((t) => t.departmentId != null && !activeIds.has(t.departmentId))
+      .map((t) => [t.departmentId as number, t.departmentName ?? '없앤 부서']),
+  )]
 
   return (
     <>
       <div className="actions-row between">
-        <h2>부서 업무보드</h2>
-        <div className="actions-row tight">
-          <label className="compact inline-label">
-            부서
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="all">전체</option>
-              {org.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </label>
-          <label className="compact inline-label check">
-            <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
-            기한 지남만{overdueCount > 0 && ` (${overdueCount})`}
-          </label>
-          {chair && adding == null && (
-            <button type="button" className="primary inline" onClick={openAdd}>업무 추가</button>
-          )}
-        </div>
+        <h2>업무보드</h2>
+        {chair && adding == null && (
+          <button type="button" className="primary inline" onClick={openAdd}>업무 추가</button>
+        )}
       </div>
       <p className="muted small">
-        회의 책임자가 승인한 업무만 보입니다.{chair && ' 카드의 "편집"으로 내용·담당·기한을 바꾸거나 업무를 취소할 수 있습니다.'}
+        부서를 누르면 그 부서에 맡겨진 업무와 체크리스트가 보입니다. 회장이 승인한 업무만 나옵니다.
       </p>
       {adding != null && (
         <AddTaskForm
@@ -111,187 +111,92 @@ function Board({ org }: { org: OrgDetail }) {
         />
       )}
       {error && <p className="error" role="alert">{error}</p>}
-      {tasks.status === 'loading' && <p className="muted">불러오는 중…</p>}
-      {tasks.status === 'error' && <p className="error">{tasks.message}</p>}
-      {tasks.status === 'ready' && (
-        <>
-          <div className="board">
-            {COLUMNS.map((column) => {
-              const items = visible.filter((t) => column.statuses.includes(t.status))
-              return (
-                <section key={column.key} className="board-column">
-                  <h3>{column.label} <span className="muted small">{items.length}</span></h3>
-                  {items.length === 0 && <p className="empty small">없음</p>}
-                  {items.map((task) => (
-                    <TaskCard key={`${task.id}-${task.version}`} task={task} org={org} chair={chair} onUpdate={update} />
-                  ))}
-                </section>
-              )
-            })}
-          </div>
-          {cancelled.length > 0 && (
-            <details className="cancelled">
-              <summary>취소된 업무 {cancelled.length}건</summary>
-              <ul className="row-list">
-                {cancelled.map((t) => (
-                  <li key={t.id} className="muted small">
-                    {t.title} · {t.departmentName ?? '담당 미정'} · {t.meetingTitle}
-                  </li>
-                ))}
-              </ul>
-            </details>
+
+      <div className="tree">
+        <div className="tree-root card">
+          <strong>{org.name}</strong>
+          <span className="muted small block">
+            회장 {owners.length > 0 ? owners.map((m) => m.name).join(', ') : '없음'}
+            {noDepartment.length > 0 && ` · 부서 없는 구성원 ${noDepartment.length}명`}
+          </span>
+        </div>
+        <ul className="tree-children">
+          {org.departments.map((d) => {
+            const people = members.filter((m) => m.departmentId === d.id)
+            return (
+              <DepartmentNode
+                key={d.id}
+                to={`/orgs/${org.id}/board/${d.id}`}
+                name={d.name}
+                mine={org.myDepartmentIds.includes(d.id)}
+                people={people}
+                counts={count(tasks.filter((t) => t.departmentId === d.id), myId)}
+              />
+            )
+          })}
+          {retired.map(([id, name]) => (
+            <DepartmentNode
+              key={id}
+              to={`/orgs/${org.id}/board/${id}`}
+              name={`${name} (없앤 부서)`}
+              mine={false}
+              people={[]}
+              counts={count(tasks.filter((t) => t.departmentId === id), myId)}
+            />
+          ))}
+          {unassigned.length > 0 && (
+            <DepartmentNode
+              to={`/orgs/${org.id}/board/none`}
+              name="담당 미정"
+              mine={false}
+              people={[]}
+              counts={count(unassigned, myId)}
+            />
           )}
-        </>
-      )}
+        </ul>
+      </div>
     </>
   )
 }
 
-interface TaskCardProps {
-  task: BoardTask
-  org: OrgDetail
-  chair: boolean
-  onUpdate: (task: BoardTask, change: TaskPatch) => Promise<boolean>
-}
-
-function TaskCard({ task, org, chair, onUpdate }: TaskCardProps) {
-  const [busy, setBusy] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const mine = task.departmentId != null && org.myDepartmentIds.includes(task.departmentId)
-  const canWork = chair || mine
-  const overdue = isOverdue(task.dueDate, task.status)
-  const finished = task.status === 'DONE' || task.status === 'CANCELLED'
-
-  async function act(change: TaskPatch) {
-    setBusy(true)
-    const ok = await onUpdate(task, change)
-    if (!ok) setBusy(false)
-  }
-
-  function cancelTask() {
-    if (window.confirm(`"${task.title}" 업무를 취소할까요? 취소한 업무는 되돌릴 수 없습니다.`)) {
-      act({ status: 'CANCELLED' })
-    }
-  }
-
+function DepartmentNode({ to, name, mine, people, counts }: {
+  to: string
+  name: string
+  mine: boolean
+  people: Member[]
+  counts: Counts
+}) {
+  const total = counts.todo + counts.doing + counts.submitted + counts.done
+  const donePercent = total === 0 ? 0 : Math.round((counts.done / total) * 100)
   return (
-    <article className={`card board-card${overdue ? ' overdue' : ''}`}>
-      <div className="card-title-row">
-        <strong>{task.title}</strong>
-        {chair && !finished && !editing && (
-          <button type="button" className="link-button" onClick={() => setEditing(true)}>편집</button>
+    <li className="tree-node">
+      <Link to={to} className={`card link-card tree-card${mine ? ' mine' : ''}`}>
+        <span className="card-title-row">
+          <strong>{name}</strong>
+          <span className="chips">
+            {mine && <span className="chip">내 부서</span>}
+            {counts.myOpenItems > 0 && <span className="chip mine-chip">나에게 맡겨진 일 {counts.myOpenItems}</span>}
+          </span>
+        </span>
+        <span className="tree-stats small">
+          할 일 {counts.todo} · 진행 {counts.doing} · 제출 {counts.submitted} · 완료 {counts.done}
+          {counts.overdue > 0 && <span className="chip warn inline-chip">기한 지남 {counts.overdue}</span>}
+        </span>
+        {total > 0 && (
+          <span className="tally-bar" role="img" aria-label={`완료 ${counts.done} / 전체 ${total}`}>
+            <span className="tally-bar-fill" style={{ width: `${donePercent}%` }} />
+          </span>
         )}
-      </div>
-      <p className="muted small">
-        {task.departmentName ?? '담당 미정'} · 기한 {task.dueDate ?? '미정'}
-        {overdue && <span className="chip warn inline-chip">기한 지남</span>}
-        {task.origin === 'MANUAL' && <span className="chip subtle inline-chip">직접 추가</span>}
-      </p>
-      <p className="small clamp">
-        <Link to={`/orgs/${org.id}/meetings/${task.meetingId}`}>{task.meetingTitle}</Link>: {task.decisionSummary}
-      </p>
-
-      {editing ? (
-        <EditTask task={task} departments={org.departments} busy={busy}
-                  onSave={async (change) => {
-                    setBusy(true)
-                    const ok = await onUpdate(task, change)
-                    setBusy(false)
-                    if (ok) setEditing(false)
-                  }}
-                  onCancelTask={cancelTask}
-                  onClose={() => setEditing(false)} />
-      ) : (
-        <div className="actions-row">
-          {task.status === 'UNASSIGNED' && chair && (
-            <select
-              aria-label="담당 부서 정하기"
-              value=""
-              disabled={busy}
-              onChange={(e) => e.target.value && act({ departmentId: Number(e.target.value) })}
-            >
-              <option value="">담당 부서 정하기</option>
-              {org.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          )}
-          {task.status === 'ASSIGNED' && canWork && (
-            <button type="button" className="primary inline" disabled={busy} onClick={() => act({ status: 'IN_PROGRESS' })}>
-              시작
-            </button>
-          )}
-          {task.status === 'IN_PROGRESS' && canWork && (
-            <button type="button" className="primary inline" disabled={busy} onClick={() => act({ status: 'SUBMITTED' })}>
-              결과 제출
-            </button>
-          )}
-          {task.status === 'SUBMITTED' && chair && (
-            <>
-              <button type="button" className="primary inline" disabled={busy} onClick={() => act({ status: 'DONE' })}>
-                완료 확정
-              </button>
-              <button type="button" className="ghost" disabled={busy} onClick={() => act({ status: 'IN_PROGRESS' })}>
-                반려
-              </button>
-            </>
-          )}
-          {task.status === 'SUBMITTED' && !chair && <span className="muted small">회의 책임자 확인 대기</span>}
-        </div>
+      </Link>
+      {people.length > 0 && (
+        <ul className="tree-leaves">
+          {people.map((m) => (
+            <li key={m.membershipId} className="small">
+              {m.name} <span className="muted">{positionLabel(m)}</span>
+            </li>
+          ))}
+        </ul>
       )}
-    </article>
-  )
-}
-
-interface EditTaskProps {
-  task: BoardTask
-  departments: { id: number; name: string }[]
-  busy: boolean
-  onSave: (change: TaskPatch) => void
-  onCancelTask: () => void
-  onClose: () => void
-}
-
-/** 회의 책임자용 편집: 내용·담당·기한. 바뀐 칸만 보낸다. */
-function EditTask({ task, departments, busy, onSave, onCancelTask, onClose }: EditTaskProps) {
-  const [title, setTitle] = useState(task.title)
-  const [departmentId, setDepartmentId] = useState<number | null>(task.departmentId)
-  const [dueDate, setDueDate] = useState(task.dueDate ?? '')
-  const clearable = canClearDepartment(task.status)
-
-  function save() {
-    const change: TaskPatch = {}
-    if (title.trim() !== task.title) change.title = title.trim()
-    if (departmentId !== task.departmentId) change.departmentId = departmentId
-    if ((dueDate || null) !== task.dueDate) change.dueDate = dueDate || null
-    if (Object.keys(change).length === 0) {
-      onClose()
-      return
-    }
-    onSave(change)
-  }
-
-  return (
-    <div className="edit-task">
-      <label className="compact">
-        업무 내용
-        <textarea value={title} onChange={(e) => setTitle(e.target.value)} rows={2} maxLength={300} />
-      </label>
-      <label className="compact">
-        담당 부서
-        <select value={departmentId ?? ''} onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : null)}>
-          {clearable && <option value="">미정</option>}
-          {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-      </label>
-      <label className="compact">
-        기한
-        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-      </label>
-      <p className="muted small">상태: {TASK_STATUS_LABEL[task.status]}</p>
-      <div className="actions-row">
-        <button type="button" className="primary inline" disabled={busy || !title.trim()} onClick={save}>저장</button>
-        <button type="button" className="ghost" disabled={busy} onClick={onClose}>닫기</button>
-        <button type="button" className="ghost danger" disabled={busy} onClick={onCancelTask}>업무 취소</button>
-      </div>
-    </div>
+    </li>
   )
 }

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate } from 'react-router'
+import { Link, Navigate } from 'react-router'
 import { ApiError } from '../api'
 import { useAuth } from '../auth'
 
@@ -61,7 +61,7 @@ export function LoginPage() {
             {submitting ? '로그인 중…' : '로그인'}
           </button>
         </form>
-        <p className="muted small">계정은 학생회 관리자의 초대로만 만들 수 있습니다.</p>
+        <p className="muted small">처음이라면 회장에게 받은 가입 코드로 <Link to="/signup">회원가입</Link>하세요.</p>
       </div>
     </main>
   )

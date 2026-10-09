@@ -24,7 +24,7 @@ class DeliveryController {
         this.deliveryService = deliveryService;
     }
 
-    /** 승인된 결정을 직속 하위 조직들에 전달(보낸 조직의 회의 책임자) */
+    /** 승인된 결정으로 다른 그룹들에 업무 요청(보내는 그룹의 owner) */
     @PostMapping("/api/decisions/{decisionId}/deliveries")
     @ResponseStatus(HttpStatus.CREATED)
     DeliveryService.DecisionDeliveries send(CurrentUser user, @PathVariable long decisionId,
@@ -66,7 +66,7 @@ class DeliveryController {
         return deliveryService.submit(user, deliveryId, request);
     }
 
-    /** 제출물 확정·반려(보낸 조직의 회의 책임자) */
+    /** 제출물 확정·반려(보낸 그룹의 회장) */
     @PostMapping("/api/submissions/{submissionId}/review")
     DeliveryViews.DeliveryView review(CurrentUser user, @PathVariable long submissionId,
                                       @Valid @RequestBody DeliveryService.Review request) {
