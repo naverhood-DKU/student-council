@@ -132,10 +132,11 @@ class MeetingAnalysisFlowTest extends IntegrationTest {
         long suppliesTaskId = ((Number) JsonPath.read(proposals, "$.decisions[0].tasks[1].id")).longValue();
         long suppliesVersion = ((Number) JsonPath.read(proposals, "$.decisions[0].tasks[1].version")).longValue();
 
-        // 승인 전 업무는 업무보드에 없다.
+        // 승인 전 업무는 업무보드에 없다. (DB를 다른 테스트와 같이 쓰므로 이 회의의 업무만 본다)
+        String thisMeeting = "$[?(@.meetingId == " + meetingId + ")]";
         mvc.perform(get("/api/orgs/{id}/tasks", cse).header(HttpHeaders.AUTHORIZATION, chair))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(0)));
+                .andExpect(jsonPath(thisMeeting, hasSize(0)));
 
         // 승인 전 수정: 추천을 받아들여 담당 지정
         long planning = departmentId(proposals, "기획부");
@@ -189,7 +190,7 @@ class MeetingAnalysisFlowTest extends IntegrationTest {
 
         // 이제 업무보드에 나온다. 보류 중인 두 번째 결정(승인 안 함)의 업무는 없다.
         mvc.perform(get("/api/orgs/{id}/tasks", cse).header(HttpHeaders.AUTHORIZATION, chair))
-                .andExpect(jsonPath("$[*].title", containsInAnyOrder("부스 홍보 포스터 제작", "부스 물품 준비")));
+                .andExpect(jsonPath(thisMeeting + ".title", containsInAnyOrder("부스 홍보 포스터 제작", "부스 물품 준비")));
 
         // 업무 진행: 홍보부원이 시작·제출, 다른 부서원은 못 바꾸고, 완료 확정은 회의 책임자만
         String pr = bearer("ce.pr");
