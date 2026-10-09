@@ -1,0 +1,11 @@
+# 비동기 작업 서버. App과 같은 jar를 이 프로필로 실행한다.
+# HTTP API는 띄우지 않고 DB job 테이블만 폴링한다.
+spring:
+  main:
+    web-application-type: none
+    # 웹 서버가 없어도 프로세스가 끝나지 않고 계속 폴링하게 한다.
+    keep-alive: true
+
+app:
+  worker:
+    enabled: true

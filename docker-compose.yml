@@ -1,0 +1,33 @@
+# 로컬 개발용 MySQL. 운영은 NCP Cloud DB for MySQL을 쓴다.
+# 실행: docker compose up -d
+# 폴더 이름이 한글이면 compose 가 프로젝트 이름을 못 만들어서 직접 정해 둔다.
+name: council-flow
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: councilflow-mysql
+    environment:
+      MYSQL_DATABASE: councilflow
+      MYSQL_USER: ${MYSQL_USER:-councilflow}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-councilflow}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-councilflow-root}
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      # 한국어 조항 검색용 FULLTEXT(ngram). 2글자 단위로 자른다.
+      - --ngram_token_size=2
+    ports:
+      # 이미 3306을 쓰는 MySQL/MariaDB가 있으면 MYSQL_PORT=3307 처럼 바꾸고 DB_URL 포트도 맞춘다.
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - councilflow-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  councilflow-mysql:

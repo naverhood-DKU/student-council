@@ -1,0 +1,29 @@
+# 빌드 결과
+target/
+frontend/node_modules/
+frontend/node/
+frontend/dist/
+*.tsbuildinfo
+
+# 비밀·키·상태 파일 (절대 커밋하지 않는다)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.lock.hcl.bak
+
+# 기획서 원본과 Office 잠금 파일
+*.docx
+~$*
+
+# 편집기·OS
+.idea/
+*.iml
+.vscode/
+.DS_Store

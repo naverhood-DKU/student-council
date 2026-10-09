@@ -1,0 +1,25 @@
+# 로컬 개발용. docker compose 의 MySQL에 붙는다.
+# 아래 기본값은 모두 로컬 전용이다. 운영 값은 prod 프로필에서 환경변수로만 받는다.
+spring:
+  config:
+    # 저장소 루트의 .env(커밋 안 함)를 읽는다. CLOVA 키, DB 포트 등. 셸 환경변수가 있으면 그쪽이 먼저다.
+    import: optional:file:.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/councilflow}
+    username: ${DB_USERNAME:councilflow}
+    password: ${DB_PASSWORD:councilflow}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:local-only-dev-secret-do-not-use-in-prod-0123456789}
+  seed:
+    # 비어 있는 DB에 시연 조직·부서·계정을 넣는다(local 전용).
+    enabled: true
+    password: ${SEED_PASSWORD:1234}
+  worker:
+    # 로컬에서는 App 하나가 분석 작업까지 처리한다. 운영은 worker 프로필 서버를 따로 띄운다.
+    enabled: true
+
+logging:
+  level:
+    kr.dku.councilflow: DEBUG

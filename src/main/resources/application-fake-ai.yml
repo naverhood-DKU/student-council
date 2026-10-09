@@ -1,0 +1,5 @@
+# CLOVA를 부르지 않고 고정 응답을 돌려준다(부하 실험·데모 예비용).
+# 가짜 구현체(SpeechClient, StudioClient)는 단계 1·3에서 이 값을 보고 선택된다.
+app:
+  ai:
+    mode: fake

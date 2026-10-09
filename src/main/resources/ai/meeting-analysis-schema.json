@@ -1,0 +1,57 @@
+{
+  "type": "object",
+  "properties": {
+    "agendas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "agenda": { "type": "string", "description": "안건 이름" },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "summary": { "type": "string", "description": "결정 내용 한두 문장" },
+                "decision_status": { "type": "string", "enum": ["CONFIRMED", "ON_HOLD", "DISCUSSING"] },
+                "source_segment_ids": {
+                  "type": "array",
+                  "items": { "type": "string", "description": "회의록의 발언 ID. 예: S12" }
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "title": { "type": "string", "description": "할 일" },
+                      "owner_department": { "type": "string", "description": "회의에서 말한 담당. 말하지 않았으면 빈 문자열" },
+                      "due_date": { "type": "string", "description": "YYYY-MM-DD. 정할 수 없으면 빈 문자열" },
+                      "source_segment_ids": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                      }
+                    },
+                    "required": ["title", "owner_department", "due_date", "source_segment_ids"]
+                  }
+                },
+                "expense_proposal": {
+                  "type": "object",
+                  "description": "돈을 쓰는 결정에만 넣는다",
+                  "properties": {
+                    "item": { "type": "string", "description": "무엇에 쓰는지" },
+                    "amount": { "type": "string", "description": "원 단위 숫자. 모르면 빈 문자열" },
+                    "fund_source": { "type": "string", "description": "재원. 모르면 빈 문자열" }
+                  },
+                  "required": ["item", "amount", "fund_source"]
+                }
+              },
+              "required": ["summary", "decision_status", "source_segment_ids", "tasks"]
+            }
+          }
+        },
+        "required": ["agenda", "decisions"]
+      }
+    }
+  },
+  "required": ["agendas"]
+}

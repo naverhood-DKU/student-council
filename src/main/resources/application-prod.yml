@@ -1,0 +1,5 @@
+# NCP 운영. DB_URL, DB_USERNAME, DB_PASSWORD, JWT_SECRET 은 환경변수로 반드시 넣는다.
+# 기본값을 두지 않았으므로 하나라도 빠지면 앱이 뜨지 않는다.
+app:
+  seed:
+    enabled: false

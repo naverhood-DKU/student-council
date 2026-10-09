@@ -1,0 +1,16 @@
+# 테스트 전용. DB 접속 정보는 Testcontainers(@ServiceConnection)가 넣는다.
+# CLOVA 주소는 IntegrationTest 가 가짜 서버 주소로 바꾼다(실제 API 호출 금지).
+app:
+  jwt:
+    secret: test-only-secret-0123456789-abcdefghijklmnopqrstuvwxyz
+  seed:
+    enabled: true
+    password: test-password-1234
+  worker:
+    # 테스트는 폴링 대신 JobRunner.runOnce() 를 직접 불러 순서를 정확히 맞춘다.
+    enabled: false
+    retry-delay: 0s
+  clova:
+    studio:
+      api-key: test-key
+      read-timeout: 1s
