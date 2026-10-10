@@ -217,6 +217,8 @@ export interface DecisionOption {
   summary: string
   meetingId: number
   meetingTitle: string
+  /** 회의에서 돈을 쓰기로 한 언급이 있을 때만. 지출 절차 확인 값을 미리 채우는 데 쓴다. */
+  expenseProposal: { item: string; amount: number | null; fundSource: string | null } | null
 }
 
 export interface NewTask {

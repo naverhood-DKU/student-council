@@ -1,7 +1,9 @@
+import './expense.css'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   api,
+  type DecisionOption,
   type ExpenseChecklistItem,
   type ExpenseClauseRef,
   type ExpenseReviewStatus,
@@ -84,8 +86,11 @@ export function ExpensePage() {
 function NewForm({ orgId }: { orgId: number }) {
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  // 승인된 결정의 지출 언급에서 넘어오면 값을 미리 채운다(사람이 보고 고친 뒤 요청한다).
-  const decisionId = Number(params.get('decisionId')) || undefined
+  // 승인된 결정의 지출 언급으로 값을 미리 채운다(사람이 보고 고친 뒤 요청한다). 주소에 값이 있거나 아래 선택 상자로 고른다.
+  const [decisionId, setDecisionId] = useState<number | undefined>(Number(params.get('decisionId')) || undefined)
+  const [decisions] = useLoad<DecisionOption[]>(
+    () => api.approvedDecisions(orgId), [orgId], '승인된 결정을 불러오지 못했습니다.')
+  const withExpense = decisions.status === 'ready' ? decisions.data.filter((d) => d.expenseProposal) : []
   const [open, setOpen] = useState(decisionId !== undefined)
   const [item, setItem] = useState(params.get('item') ?? '')
   const [amount, setAmount] = useState(params.get('amount') ?? '')
@@ -95,6 +100,16 @@ function NewForm({ orgId }: { orgId: number }) {
   const [keywords, setKeywords] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  function pickDecision(value: string) {
+    const picked = withExpense.find((d) => String(d.id) === value)
+    setDecisionId(picked?.id)
+    if (picked?.expenseProposal) {
+      setItem(picked.expenseProposal.item)
+      setAmount(picked.expenseProposal.amount == null ? '' : String(picked.expenseProposal.amount))
+      setFundSource(picked.expenseProposal.fundSource ?? '')
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -125,6 +140,16 @@ function NewForm({ orgId }: { orgId: number }) {
   return (
     <form className="card stack" onSubmit={submit}>
       <h3>지출 절차 확인하기</h3>
+      {withExpense.length > 0 && (
+        <label>승인된 결정에서 불러오기 (선택)
+          <select value={decisionId ?? ''} onChange={(e) => pickDecision(e.target.value)}>
+            <option value="">직접 입력</option>
+            {withExpense.map((d) => (
+              <option key={d.id} value={d.id}>{d.meetingTitle} · {d.expenseProposal?.item}</option>
+            ))}
+          </select>
+        </label>
+      )}
       {decisionId !== undefined && (
         <p className="muted small">승인된 결정의 지출 언급으로 채웠습니다. 내용이 맞는지 확인해 주세요.</p>
       )}
@@ -199,7 +224,7 @@ function ClauseLinks({ clauses }: { clauses: ExpenseClauseRef[] }) {
   return (
     <span className="chips">
       {clauses.map((c) => (
-        <button key={c.clauseId} type="button" className="chip subtle" onClick={() => scrollToClause(c.clauseId)}
+        <button key={c.clauseId} type="button" className="chip subtle expense-link" onClick={() => scrollToClause(c.clauseId)}
                 title={`${c.docTitle} ${c.label}로 이동`}>
           {c.label}
         </button>
@@ -295,7 +320,10 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
           <Checklist items={evidence} editable={editable} busy={busy} onToggle={toggle}
                      empty="후보 조항에서 서버가 확인한 필요 증빙이 없습니다. 조항 원문을 직접 확인해 주세요." />
           {(approvals.length > 0 || evidence.length > 0) && (
-            <p className="muted small">체크 표시는 사람이 확인했다는 기록이며, 회장과 부장급 직책이 바꿀 수 있습니다.</p>
+            <p className="muted small">
+              항목 문구는 AI 가 정리한 글이고, 아래 인용 구절만 규정 원문에서 확인된 것입니다. 문구와 인용의 뜻이 맞는지 직접 확인해 주세요.
+              체크 표시는 사람이 확인했다는 기록이며, 회장과 부장급 직책이 바꿀 수 있습니다.
+            </p>
           )}
 
           {guidance.conflicts.length > 0 && (
@@ -318,7 +346,7 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
           {guidance.missingFacts.length > 0 && (
             <>
               <h3>더 확인해야 할 사실</h3>
-              <ul className="plain-list">
+              <ul className="expense-list">
                 {guidance.missingFacts.map((f) => <li key={f}>{f}</li>)}
               </ul>
             </>
@@ -335,7 +363,7 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
           {guidance.droppedCount > 0 && (
             <div className="card small" role="status">
               <strong>서버 검증에서 {guidance.droppedCount}개 항목을 제외했습니다.</strong>
-              <ul className="plain-list">
+              <ul className="expense-list">
                 {guidance.droppedNotes.map((n) => <li key={n}>{n}</li>)}
               </ul>
               <span className="muted">조항 원문에서 확인되지 않은 내용은 보여 주지 않습니다. 빠진 내용이 있을 수 있습니다.</span>
@@ -412,11 +440,11 @@ function Checklist({ items, editable, busy, empty, onToggle }: {
     <ul className="card-list">
       {items.map((item) => (
         <li key={item.id} className="card">
-          <label className="check-row">
+          <label className="expense-check">
             <input type="checkbox" checked={item.checked} disabled={!editable || busy} onChange={() => onToggle(item)} />
             <span><strong>{item.text}</strong></span>
           </label>
-          <blockquote className="quote">
+          <blockquote className="expense-quote">
             <span className="muted small">원문에서 확인된 구절</span>
             <span className="block">{item.quote}</span>
           </blockquote>

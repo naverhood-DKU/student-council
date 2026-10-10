@@ -494,28 +494,3 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
 
 /* 카드 안 목록: 줄이 카드 테두리에 붙지 않게 */
 .card.row-list { padding: 4px 16px; }
-
-/* 규정 검수: 조항 원문은 줄바꿈·들여쓰기를 그대로 보여 준다 */
-.clause-text {
-  white-space: pre-wrap;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
-  font: inherit;
-  line-height: 1.6;
-  margin: 8px 0;
-}
-
-/* 지출 절차 안내: 체크리스트와 원문에서 확인된 인용 구절 */
-.check-row { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 8px; cursor: pointer; }
-.check-row input { width: auto; margin-top: 4px; flex: none; }
-.quote {
-  margin: 0 0 8px;
-  padding: 6px 12px;
-  border-left: 3px solid var(--border);
-  font-size: 0.875rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.plain-list { margin: 4px 0 8px; padding-left: 20px; display: grid; gap: 2px; }
-button.chip { cursor: pointer; font: inherit; font-size: 0.8125rem; }

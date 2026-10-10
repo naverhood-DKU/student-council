@@ -494,6 +494,42 @@ class ExpenseGuidanceTest extends ExpenseTestSupport {
                 owner, Map.of("checked", false)).andExpect(status().isConflict());
     }
 
+    // ---- 승인된 결정에서 채우기 ----
+
+    @Test
+    void 승인된_결정의_지출_언급은_결정_목록에_실리고_요청이_그_값으로_채워진다() throws Exception {
+        long ce = orgId("컴퓨터공학과 학생회");
+        String owner = bearer("ce");
+        long meetingId = createMeeting("ce", ce, "회장: 퐁퐁쿵쿵 행사 숙박비는 학생회비로 45만원 쓰기로 확정합니다.\n");
+        CLOVA.enqueue(FakeClovaServer.ok("""
+                {"agendas":[{"agenda":"행사 숙박","decisions":[{"summary":"숙박비를 학생회비로 쓴다.",
+                  "decision_status":"CONFIRMED","source_segment_ids":["S1"],"tasks":[],
+                  "expense_proposal":{"item":"퐁퐁쿵쿵 행사 숙박비","amount":"450000","fund_source":"학생회비"}}]}]}
+                """));
+        requestAnalysis("ce", meetingId);
+        assertThat(jobRunner.runOnce()).isTrue();
+        String proposals = body(mvc.perform(get("/api/meetings/{id}/proposals", meetingId)
+                .header(HttpHeaders.AUTHORIZATION, owner)).andExpect(status().isOk()));
+        long decisionId = num(proposals, "$.decisions[0].id");
+        long version = num(proposals, "$.decisions[0].version");
+        mvc.perform(post("/api/decisions/{id}/approve", decisionId).header(HttpHeaders.AUTHORIZATION, owner)
+                .header(HttpHeaders.IF_MATCH, version)).andExpect(status().isOk());
+
+        // 승인된 결정 목록에 지출 언급이 함께 실린다(지출 화면의 "승인된 결정에서 불러오기").
+        mvc.perform(get("/api/orgs/{id}/decisions", ce).header(HttpHeaders.AUTHORIZATION, owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + decisionId + ")].expenseProposal.item").value("퐁퐁쿵쿵 행사 숙박비"))
+                .andExpect(jsonPath("$[?(@.id == " + decisionId + ")].expenseProposal.amount").value(450000));
+
+        // 결정만 주고 요청하면 항목·금액·재원이 그 지출 언급으로 채워진다.
+        json(post("/api/expense-reviews"), owner, Map.of("orgId", ce, "decisionId", decisionId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.item").value("퐁퐁쿵쿵 행사 숙박비"))
+                .andExpect(jsonPath("$.amount").value(450000))
+                .andExpect(jsonPath("$.fundSource").value("학생회비"))
+                .andExpect(jsonPath("$.decisionId").value(decisionId));
+    }
+
     // ---- 프롬프트 안전 ----
 
     @Test

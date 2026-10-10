@@ -1,3 +1,4 @@
+import './expense.css'
 import { useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { api, type ClauseView, type RuleDocDetail } from '../api'
