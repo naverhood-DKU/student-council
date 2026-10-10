@@ -1,0 +1,74 @@
+{
+  "description": "지출 절차 안내 평가 사례. 가상 규정(rules-sample.txt)에서 사람이 정답 조항을 정해 둔 것이다. 실제 규정으로 바꿀 때는 사례도 규정 담당자가 다시 검수해야 한다.",
+  "rules": "rules-sample.txt",
+  "effectiveDate": "2020-01-01",
+  "docVersion": "평가용 1.0",
+  "cases": [
+    {
+      "id": "mt-lodging",
+      "item": "MT 숙박비",
+      "amount": 450000,
+      "expectStatus": "CANDIDATES_FOUND",
+      "expectLabels": ["제6조"],
+      "note": "항목에 맞는 조항(제6조). 금액 표기(45만원)로 제2조도 뒤에 붙을 수 있다"
+    },
+    {
+      "id": "meeting-snack",
+      "item": "회의 간식 구입",
+      "expectStatus": "CANDIDATES_FOUND",
+      "expectLabels": ["제5조"],
+      "note": "간식 → 제5조. 구입이라는 말 때문에 제7조도 후보에 들어올 수 있다"
+    },
+    {
+      "id": "projector",
+      "item": "프로젝터 구입",
+      "amount": 600000,
+      "expectStatus": "CANDIDATES_FOUND",
+      "expectLabels": ["제7조", "제2조"],
+      "note": "비품 구입(제7조) + 금액 기준(제2조, 60만원 표기로 찾음)"
+    },
+    {
+      "id": "festival-booth",
+      "item": "축제 부스 행사 진행비",
+      "expectStatus": "CANDIDATES_FOUND",
+      "expectLabels": ["제4조"]
+    },
+    {
+      "id": "poster",
+      "item": "동아리 포스터 인쇄",
+      "expectStatus": "CANDIDATES_FOUND",
+      "expectLabels": ["제8조"]
+    },
+    {
+      "id": "dinner",
+      "item": "회식비",
+      "expectStatus": "CANDIDATES_FOUND",
+      "expectLabels": ["제5조"],
+      "note": "규정은 식비라고 쓴다. 회식비의 글자 조각(식비)이 겹쳐서 찾는다"
+    },
+    {
+      "id": "bus-keywords",
+      "item": "답사 버스 대절",
+      "keywords": "교통비",
+      "expectStatus": "CANDIDATES_FOUND",
+      "expectLabels": ["제9조"],
+      "note": "규정 낱말(교통비)을 '찾을 말'로 더하면 찾는다"
+    },
+    {
+      "id": "bus-no-keywords",
+      "item": "답사 버스 대절",
+      "expectStatus": "NEEDS_CHECK",
+      "expectLabels": [],
+      "note": "규정에 쓰인 낱말과 달라 못 찾는다. 이때 안전하다고 하지 않고 확인 필요여야 한다"
+    },
+    {
+      "id": "overseas-training",
+      "item": "해외 연수 항공권",
+      "amount": 1200000,
+      "expectStatus": "ANY",
+      "expectLabels": [],
+      "forbidLabels": ["제4조", "제6조", "제7조", "제8조", "제9조"],
+      "note": "규정에 이 지출을 다루는 조항이 없다. 금액 표기(120만원) 때문에 금액 기준 조항이 뒤에 붙을 수는 있지만 항목에 맞는 것처럼 다른 조항이 나오면 안 된다"
+    }
+  ]
+}
