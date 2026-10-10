@@ -56,4 +56,4 @@ Files: `docs/infra.md`, `infra/monitoring/`, existing deployment plan; protected
 - [x] Update Cloud Insight bootstrap targets to new hosts; retain ASG CPU events. Query actual metric data.
 - [x] Update resource IDs, private IPs, OS, rollback artifacts and deletion/cost inventory; final Terraform plan must have zero changes.
 - [x] Open public UI and verify desktop/mobile meeting branches, preview badge for recording, draft persistence and group permissions; save screenshot.
-- [ ] Run whole-branch fresh review, fix critical/important findings with regression evidence, push draft PR and attach. Shared main is not merged automatically.
+- [x] Run whole-branch fresh review, fix critical/important findings with regression evidence, push draft PR and attach. Shared main is not merged automatically.
