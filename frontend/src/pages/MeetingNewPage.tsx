@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { api } from '../api'
 import { errorMessage } from '../useOrg'
 import { TopBar } from './TopBar'
+import { FlowIcon } from './MeetingFlow'
 
 /** datetime-local 입력의 기본값(지금, 내 PC 시간대) */
 function nowLocal(): string {
@@ -72,12 +73,17 @@ export function MeetingNewPage() {
   return (
     <>
       <TopBar />
-      <main className="page narrow">
+      <main className="page narrow meeting-new-page">
         <p><Link to={`/orgs/${orgId}`} className="muted small">← 대시보드</Link></p>
-        <h2>회의록 올리기</h2>
+        <span className="eyebrow">회의 → 결정 → 부서별 업무</span>
+        <h2>회의에서 다음 할 일을 꺼내세요.</h2>
+        <div className="source-options">
+          <div className="source-option chosen"><FlowIcon kind="meeting" /><strong>회의록으로 시작</strong><span>텍스트 입력 · TXT · PDF</span></div>
+          <div className="source-option upcoming"><FlowIcon kind="audio" /><strong>녹음으로 시작 <span className="chip subtle">준비 중</span></strong><span>녹음 업로드·전사는 아직 연결되지 않았습니다.</span></div>
+        </div>
         <p className="muted small">
-          한 줄에 발언 하나씩 적습니다. "이름: 내용" 형식이면 이름을 화자로 따로 저장합니다.
-          AI는 결정·업무 <strong>후보</strong>만 만들고, 회장(owner)이 승인해야 확정됩니다.
+          회의록을 입력하거나 파일로 불러오세요. AI가 결정사항과 부서별 업무를 제안합니다.
+          AI는 결정·업무 <strong>후보</strong>만 만들고, 회장이 승인해야 확정됩니다.
         </p>
         <form onSubmit={onSubmit} className="card">
           <label>
@@ -108,7 +114,7 @@ export function MeetingNewPage() {
           {notice && <p className="notice small" role="status">{notice}</p>}
           {error && <p className="error" role="alert">{error}</p>}
           <button type="submit" className="primary" disabled={submitting || reading}>
-            {submitting ? '올리는 중…' : '올리고 분석 시작'}
+            {submitting ? '올리는 중…' : '결정·업무 후보 만들기'}
           </button>
         </form>
       </main>

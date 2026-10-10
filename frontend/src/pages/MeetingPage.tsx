@@ -22,7 +22,7 @@ export function MeetingPage() {
   return (
     <>
       <TopBar />
-      <main className="page wide">
+      <main className="page wide meeting-page">
         <p><Link to={`/orgs/${orgId}`} className="muted small">← 대시보드</Link></p>
         {(org.status === 'loading' || detail.status === 'loading') && <p className="page-message">불러오는 중…</p>}
         {org.status === 'error' && <p className="error" role="alert">{org.message}</p>}
@@ -39,6 +39,7 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
   const { meeting, latestJob } = detail
   const [liveJob, setLiveJob] = useState<Job | null>(null)
   const [requesting, setRequesting] = useState(false)
+  const [reviewComplete, setReviewComplete] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const job = liveJob && liveJob.id === latestJob?.id ? liveJob : latestJob
   const working = job != null && (job.status === 'QUEUED' || job.status === 'RUNNING')
@@ -74,16 +75,22 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
   return (
     <>
       <section className="org-header">
-        <span className={`chip status-${meeting.status.toLowerCase()}`}>{MEETING_STATUS_LABEL[meeting.status]}</span>
+        <span className={`chip status-${meeting.status.toLowerCase()}`}>{reviewComplete ? '검토 완료' : MEETING_STATUS_LABEL[meeting.status]}</span>
         <h2>{meeting.title}</h2>
+        <p className="meeting-subtitle">회의에서 나온 결정이 각 부서의 할 일로 이어집니다.</p>
         <p className="muted small">{formatDateTime(meeting.heldAt)} · 발언 {detail.segmentCount}줄</p>
       </section>
 
+      <ol className="meeting-progress" aria-label="회의 분석 진행 단계">
+        <li className="complete"><span>01</span><strong>회의록 등록</strong><small>원문 준비 완료</small></li>
+        <li className={meeting.status === 'ANALYZED' ? 'complete' : working ? 'current' : ''}><span>02</span><strong>결정·업무 연결</strong><small>{working ? 'AI가 분석 중' : meeting.status === 'ANALYZED' ? '분석 완료' : '분석 대기'}</small></li>
+        <li className={reviewComplete ? 'complete' : meeting.status === 'ANALYZED' ? 'current' : ''}><span>03</span><strong>검토 후 업무 확정</strong><small>{reviewComplete ? '검토 완료 · 업무보드 연결' : '근거 확인 · 승인'}</small></li>
+      </ol>
       {working && job && (
         <div className="card notice-card" role="status">
           <span className="spinner" aria-hidden="true" />
           <div>
-            <strong>AI가 회의록을 읽고 있습니다… ({JOB_STATUS_LABEL[job.status]})</strong>
+            <strong>AI가 결정사항과 부서별 업무를 연결하고 있습니다… ({JOB_STATUS_LABEL[job.status]})</strong>
             <p className="muted small">
               보통 몇십 초 걸립니다. 이 화면을 닫아도 분석은 계속됩니다.
               {job.lastError && ` 일시 오류로 다시 시도하는 중입니다(${job.attempts}/3회).`}
@@ -114,7 +121,7 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
       )}
       {error && <p className="error" role="alert">{error}</p>}
 
-      {meeting.status === 'ANALYZED' && <ReviewPanel org={org} meetingId={meeting.id} />}
+      {meeting.status === 'ANALYZED' && <ReviewPanel org={org} meetingId={meeting.id} onReviewComplete={setReviewComplete} />}
     </>
   )
 }
