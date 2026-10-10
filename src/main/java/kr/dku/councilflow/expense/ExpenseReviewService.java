@@ -86,11 +86,20 @@ public class ExpenseReviewService {
     }
 
     public record CandidateView(long clauseId, int rank, String label, String title, String text, long docId,
-                                String docTitle, String docVersion, LocalDate docEffectiveDate, RuleDocStatus docStatus) {
+                                String docTitle, String docVersion, LocalDate docEffectiveDate, RuleDocStatus docStatus,
+                                boolean mentionsRestriction) {
     }
 
-    /** 화면에서 근거 조항으로 연결하기 위한 짧은 참조 */
-    public record ClauseRef(long clauseId, String label, String docTitle) {
+    /**
+     * 화면에서 근거 조항으로 연결하기 위한 짧은 참조.
+     * mentionsRestriction 은 그 조항 글에 금지·제한 표현이 있다는 뜻이다(서버의 낱말 검사). 승인·증빙 항목이 이런 조항을
+     * 근거로 들면 화면이 "원문을 확인하라"고 알린다.
+     */
+    public record ClauseRef(long clauseId, String label, String docTitle, boolean mentionsRestriction) {
+    }
+
+    /** 사용을 금지(PROHIBITED)하거나 한도·조건을 두는(LIMITED) 조항 내용. quote 는 원문에서 확인된 구절 */
+    public record RestrictionView(String kind, String text, List<ClauseRef> clauses, String quote, boolean related) {
     }
 
     public record ChecklistItemView(long id, ChecklistKind kind, String text, List<ClauseRef> clauses, String quote,
@@ -101,8 +110,9 @@ public class ExpenseReviewService {
     }
 
     /** 서버 검증을 통과한 AI 안내. note 는 조항으로 확인된 내용이 아니라 참고용이다. */
-    public record GuidanceView(String outcome, List<ConflictView> conflicts, List<String> missingFacts, String note,
-                               int droppedCount, List<String> droppedNotes, String generatedAt) {
+    public record GuidanceView(String outcome, List<RestrictionView> restrictions, List<ConflictView> conflicts,
+                               List<String> missingFacts, String note, int droppedCount, List<String> droppedNotes,
+                               String generatedAt) {
     }
 
     public record ReviewView(long id, long orgId, Long decisionId, String item, Long amount, String fundSource,
@@ -316,9 +326,10 @@ public class ExpenseReviewService {
             if (c == null || d == null) {
                 continue;
             }
+            boolean restrictive = RestrictionWords.mentionsRestriction(c.getText());
             candidates.add(new CandidateView(c.getId(), ++rank, c.getLabel(), c.getTitle(), c.getText(), d.getId(),
-                    d.getTitle(), d.getDocVersion(), d.getEffectiveDate(), d.getStatus()));
-            refs.put(c.getId(), new ClauseRef(c.getId(), c.getLabel(), d.getTitle()));
+                    d.getTitle(), d.getDocVersion(), d.getEffectiveDate(), d.getStatus(), restrictive));
+            refs.put(c.getId(), new ClauseRef(c.getId(), c.getLabel(), d.getTitle(), restrictive));
         }
 
         GuidanceView guidance = null;
@@ -327,8 +338,12 @@ public class ExpenseReviewService {
             List<ConflictView> conflicts = ai.conflicts() == null ? List.of() : ai.conflicts().stream()
                     .map(c -> new ConflictView(c.description(), refsOf(c.clauseIds(), refs)))
                     .toList();
-            guidance = new GuidanceView(ai.outcome(), conflicts, review.getMissingFacts(), review.getGuidance(),
-                    ai.droppedCount(), ai.droppedNotes() == null ? List.of() : ai.droppedNotes(), ai.generatedAt());
+            List<RestrictionView> restrictions = ai.restrictionsOrEmpty().stream()
+                    .map(r -> new RestrictionView(r.kind(), r.text(), refsOf(r.clauseIds(), refs), r.quote(), r.relatedOrTrue()))
+                    .toList();
+            guidance = new GuidanceView(ai.outcome(), restrictions, conflicts, review.getMissingFacts(),
+                    review.getGuidance(), ai.droppedCount(),
+                    ai.droppedNotes() == null ? List.of() : ai.droppedNotes(), ai.generatedAt());
         }
         List<ChecklistItemView> items = checklist.findByReviewIdOrderBySeq(review.getId()).stream()
                 .map(i -> checklistView(i, refs))
@@ -351,7 +366,8 @@ public class ExpenseReviewService {
         byId.values().forEach(c -> {
             RuleDocument d = docById.get(c.getDocId());
             if (d != null) {
-                refs.put(c.getId(), new ClauseRef(c.getId(), c.getLabel(), d.getTitle()));
+                refs.put(c.getId(), new ClauseRef(c.getId(), c.getLabel(), d.getTitle(),
+                        RestrictionWords.mentionsRestriction(c.getText())));
             }
         });
         return refs;
@@ -399,6 +415,10 @@ public class ExpenseReviewService {
         if (ai != null && ai.droppedCount() > 0) {
             notices.add("AI 안내 중 서버 검증을 통과하지 못한 " + ai.droppedCount() + "개 항목을 제외했습니다. "
                     + "빠진 내용이 있을 수 있으니 조항 원문을 직접 확인해 주세요.");
+        }
+        if (ai != null && ExpenseReviewStatus.POSSIBLY_RESTRICTED.name().equals(ai.outcome())) {
+            notices.add("후보 조항 중 이 지출의 사용을 금지하거나 제한하는 내용이 있을 수 있습니다. 규정에 따를 절차가 있다는 뜻이 아니니 "
+                    + "조항 원문을 직접 확인해 주세요.");
         }
         if (ai != null && ExpenseReviewStatus.NEEDS_CHECK.name().equals(ai.outcome())) {
             notices.add("AI 안내에서 조항으로 확인된 승인·증빙 항목이 없습니다. 이것은 문제가 없다는 뜻이 아닙니다. "

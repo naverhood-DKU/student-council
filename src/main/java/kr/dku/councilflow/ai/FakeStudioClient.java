@@ -63,6 +63,7 @@ public class FakeStudioClient implements StudioClient {
         }
         result.put("required_approvals", approvals);
         result.put("required_evidence", List.of());
+        result.put("restrictions", List.of());
         result.put("conflicts", List.of());
         result.put("missing_facts", List.of());
         result.put("guidance", "(가짜 AI) 고정 응답입니다. 실제 분석이 아닙니다. 후보 조항 원문을 직접 확인하세요.");

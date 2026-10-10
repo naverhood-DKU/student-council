@@ -64,6 +64,28 @@ abstract class ExpenseTestSupport extends IntegrationTest {
         return docId;
     }
 
+    /** PDF 규정 파일을 올려 모든 조항을 검수 완료로 표시하고 확정한다(점검용: 사람이 대조하는 검수를 건너뜀). */
+    protected long registerRuleFile(String ownerToken, long orgId, java.nio.file.Path file, String title,
+                                    String effectiveDate, String docVersion) throws Exception {
+        byte[] bytes = java.nio.file.Files.readAllBytes(file);
+        MockMultipartFile upload = new MockMultipartFile("file", file.getFileName().toString(), "application/pdf", bytes);
+        String created = body(mvc.perform(multipart("/api/orgs/{id}/rule-documents", orgId).file(upload)
+                        .param("title", title).param("issuer", "평가용 학생회")
+                        .param("effectiveDate", effectiveDate).param("docVersion", docVersion)
+                        .header(HttpHeaders.AUTHORIZATION, ownerToken))
+                .andExpect(status().isCreated()));
+        long docId = num(created, "$.summary.id");
+        List<Integer> ids = JsonPath.read(created, "$.clauses[?(@.kind == 'ARTICLE' || @.kind == 'EXTRA' || @.kind == 'SUPPLEMENTARY')].id");
+        json(post("/api/rule-documents/{id}/clauses/review", docId), ownerToken, Map.of("clauseIds", ids))
+                .andExpect(status().isOk());
+        String fresh = body(mvc.perform(get("/api/rule-documents/{id}", docId).header(HttpHeaders.AUTHORIZATION, ownerToken))
+                .andExpect(status().isOk()));
+        json(post("/api/rule-documents/{id}/confirm", docId)
+                        .header(HttpHeaders.IF_MATCH, num(fresh, "$.summary.version")), ownerToken, Map.of())
+                .andExpect(status().isOk());
+        return docId;
+    }
+
     protected record NewGroup(long id, String ownerToken) {
     }
 
@@ -133,6 +155,28 @@ abstract class ExpenseTestSupport extends IntegrationTest {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("required_approvals", approvals);
         result.put("required_evidence", evidence);
+        result.put("conflicts", conflicts);
+        result.put("missing_facts", missing);
+        result.put("guidance", guidance);
+        return JSON.writeValueAsString(result);
+    }
+
+    protected static Map<String, Object> restrict(String kind, String text, String quote, String... names) {
+        Map<String, Object> restriction = new LinkedHashMap<>();
+        restriction.put("kind", kind);
+        restriction.put("text", text);
+        restriction.put("clause_ids", List.of(names));
+        restriction.put("quote", quote);
+        return restriction;
+    }
+
+    /** 금지·제한(restrictions)까지 넣은 모델 응답 */
+    protected static String aiWithRestrictions(List<?> approvals, List<?> evidence, List<?> restrictions,
+                                               List<?> conflicts, List<String> missing, String guidance) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("required_approvals", approvals);
+        result.put("required_evidence", evidence);
+        result.put("restrictions", restrictions);
         result.put("conflicts", conflicts);
         result.put("missing_facts", missing);
         result.put("guidance", guidance);

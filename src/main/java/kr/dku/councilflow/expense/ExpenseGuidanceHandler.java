@@ -38,6 +38,10 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
     record Result(ExpenseGuidanceValidator.Validated validated) {
     }
 
+    /** 모델에 보낼 메시지와, 금지 항목의 관련성을 가릴 지출 항목 글 */
+    private record Prepared(ExpenseGuidancePrompt.Built built, String subject) {
+    }
+
     private final ExpenseReviewRepository reviews;
     private final ExpenseChecklistItemRepository items;
     private final ClauseRepository clauses;
@@ -71,9 +75,9 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
 
     @Override
     public Result execute(long reviewId) {
-        ExpenseGuidancePrompt.Built built = readOnly.execute(status -> build(reviewId));
-        ParsedGuidance parsed = analyzer.analyze(built.messages());
-        return new Result(ExpenseGuidanceValidator.validate(parsed, built.candidates()));
+        Prepared prepared = readOnly.execute(status -> build(reviewId));
+        ParsedGuidance parsed = analyzer.analyze(prepared.built().messages());
+        return new Result(ExpenseGuidanceValidator.validate(parsed, prepared.built().candidates(), prepared.subject()));
     }
 
     @Override
@@ -115,8 +119,8 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
         }
         items.saveAll(created);
 
-        GuidanceResult stored = new GuidanceResult(v.status().name(), v.conflicts(), v.droppedCount(),
-                v.droppedNotes(), clock.instant().toString());
+        GuidanceResult stored = new GuidanceResult(v.status().name(), v.conflicts(), v.restrictions(),
+                v.droppedCount(), v.droppedNotes(), clock.instant().toString());
         review.applyGuidance(v.status(), stored, v.missingFacts(), v.guidance());
 
         Map<String, Object> after = new LinkedHashMap<>();
@@ -124,6 +128,7 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
         after.put("approvals", v.approvals().size());
         after.put("evidence", v.evidence().size());
         after.put("conflicts", v.conflicts().size());
+        after.put("restrictions", v.restrictions().size());
         after.put("dropped", v.droppedCount());
         audit.record(null, review.getOrgId(), "EXPENSE_GUIDANCE_GENERATED", "EXPENSE_REVIEW", reviewId, null, after);
     }
@@ -133,7 +138,7 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
         // 상태를 바꾸지 않는다. 후보 조항은 그대로 보이고 작업 상태·오류 종류는 화면에서 job 으로 읽는다.
     }
 
-    private ExpenseGuidancePrompt.Built build(long reviewId) {
+    private Prepared build(long reviewId) {
         ExpenseReview review = reviews.findById(reviewId).orElseThrow(() -> JobFailure.permanent("REVIEW_NOT_FOUND"));
         if (review.getStatus() == ExpenseReviewStatus.REVIEWED) {
             throw JobFailure.permanent("ALREADY_REVIEWED");
@@ -159,7 +164,9 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
         }
         ExpenseGuidancePrompt.Subject subject = new ExpenseGuidancePrompt.Subject(review.getItem(), review.getAmount(),
                 review.getFundSource(), review.getPlannedDate(), review.getNote(), LocalDate.now(clock.withZone(SEOUL)));
-        return prompt.build(subject, inputs);
+        // 금지·제한이 이 지출과 직접 관련 있는지 가릴 때는 후보를 찾는 데 실제로 쓴 말(항목·설명·찾을 말)을 쓴다.
+        String relatedSubject = review.getSearchText() != null ? review.getSearchText() : review.getItem();
+        return new Prepared(prompt.build(subject, inputs), relatedSubject);
     }
 
     private static String key(ChecklistKind kind, String text) {

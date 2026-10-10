@@ -33,6 +33,23 @@
         "required": ["text", "clause_ids", "quote"]
       }
     },
+    "restrictions": {
+      "type": "array",
+      "description": "이 지출의 사용을 금지하거나 한도·조건을 두는 조항 내용",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["PROHIBITED", "LIMITED"], "description": "PROHIBITED 는 이 지출을 금지, LIMITED 는 한도·조건" },
+          "text": { "type": "string", "description": "무엇이 금지되거나 제한되는지 한 줄. 조항에 적힌 내용만" },
+          "clause_ids": {
+            "type": "array",
+            "items": { "type": "string", "description": "근거 조항 이름. 예: C3" }
+          },
+          "quote": { "type": "string", "description": "근거 조항 원문에서 한 글자도 바꾸지 않고 옮긴 구절" }
+        },
+        "required": ["kind", "text", "clause_ids", "quote"]
+      }
+    },
     "conflicts": {
       "type": "array",
       "description": "후보 조항끼리 다르게 말하는 부분. 어느 쪽이 맞는지는 정하지 않는다",
@@ -55,5 +72,5 @@
     },
     "guidance": { "type": "string", "description": "짧은 참고 안내문. 없으면 빈 문자열" }
   },
-  "required": ["required_approvals", "required_evidence", "conflicts", "missing_facts", "guidance"]
+  "required": ["required_approvals", "required_evidence", "restrictions", "conflicts", "missing_facts", "guidance"]
 }

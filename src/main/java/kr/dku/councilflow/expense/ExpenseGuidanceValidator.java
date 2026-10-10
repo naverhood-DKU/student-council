@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
  *   원문은 "실제로 모델에게 보낸 글"이다. 길어서 잘라 보냈다면 잘린 앞부분에서만 찾는다.
  * - 충돌 가능성은 서로 다른 후보 조항 둘 이상을 가리켜야 한다.
  * - "문제없음·승인 불필요·통과" 같은 판정 표현이 든 글은 버린다(원칙 5). 안내문도 마찬가지다.
+ * - 승인·증빙으로 분류됐지만 인용 구절 자체가 금지·제한만 말하면 금지·제한으로 옮긴다(RestrictionWords).
  * - 아무것도 남지 않으면 NEEDS_CHECK 다. 근거 없이 남은 안내문(guidance)은 버린다.
  * - 버린 개수와 이유는 결과에 남겨 화면에 알린다. 조용히 없애지 않는다.
  */
@@ -38,16 +39,17 @@ public final class ExpenseGuidanceValidator {
     public record Item(String text, List<Long> clauseIds, String quote) {
     }
 
-    /** status 는 PROCEDURE_FOUND / POSSIBLE_CONFLICT / NEEDS_CHECK 중 하나다. */
+    /** status 는 POSSIBLY_RESTRICTED / POSSIBLE_CONFLICT / PROCEDURE_FOUND / NEEDS_CHECK 중 하나다. */
     public record Validated(ExpenseReviewStatus status, List<Item> approvals, List<Item> evidence,
-                            List<GuidanceResult.Conflict> conflicts, List<String> missingFacts, String guidance,
-                            int droppedCount, List<String> droppedNotes) {
+                            List<GuidanceResult.Restriction> restrictions, List<GuidanceResult.Conflict> conflicts,
+                            List<String> missingFacts, String guidance, int droppedCount, List<String> droppedNotes) {
     }
 
     private enum Reason {
         NO_CLAUSE("근거 조항을 적지 않은 항목"),
         OUT_OF_CANDIDATES("후보 조항 목록에 없는 조항을 근거로 든 항목"),
         BAD_QUOTE("근거 조항 원문에서 확인되지 않는 인용을 쓴 항목"),
+        NOT_SUPPORTED("금지·제한 표현이 있는 조항에서 승인·증빙 내용이 아닌 구절을 근거로 든 항목"),
         ONE_CLAUSE_CONFLICT("서로 다른 후보 조항 둘 이상을 가리키지 않은 충돌 항목"),
         VERDICT("판정 표현(괜찮다는 취지의 말)이 든 항목"),
         EMPTY_OR_LONG("내용이 비었거나 너무 긴 항목"),
@@ -71,14 +73,24 @@ public final class ExpenseGuidanceValidator {
     }
 
     public static Validated validate(ParsedGuidance parsed, List<Candidate> candidates) {
+        return validate(parsed, candidates, null);
+    }
+
+    /**
+     * @param subject 지출 항목·설명·찾을 말을 이은 글. 금지·제한이 이 지출과 직접 관련 있는지 가리는 데 쓴다.
+     *                null 이면 모두 관련 있다고 본다.
+     */
+    public static Validated validate(ParsedGuidance parsed, List<Candidate> candidates, String subject) {
         Map<String, Candidate> byName = new LinkedHashMap<>();
         for (Candidate candidate : candidates) {
             byName.put(normalizeName(candidate.name()), candidate);
         }
         Map<Reason, Integer> dropped = new LinkedHashMap<>();
 
-        List<Item> approvals = items(parsed.approvals(), byName, dropped);
-        List<Item> evidence = items(parsed.evidence(), byName, dropped);
+        List<GuidanceResult.Restriction> restrictions = restrictions(parsed.restrictions(), byName, dropped, subject);
+        int[] moved = {0};
+        List<Item> approvals = items(parsed.approvals(), byName, dropped, restrictions, moved, subject, true);
+        List<Item> evidence = items(parsed.evidence(), byName, dropped, restrictions, moved, subject, false);
         List<GuidanceResult.Conflict> conflicts = conflicts(parsed.conflicts(), byName, dropped);
 
         List<String> missing = new ArrayList<>();
@@ -93,10 +105,15 @@ public final class ExpenseGuidanceValidator {
             }
         }
 
+        // 배지는 이 지출과 직접 관련 있어 보이는 금지에만 쓴다. 관련 없어 보이는 금지는 지우지 않고 따로 보여 준다.
+        boolean prohibited = restrictions.stream()
+                .anyMatch(r -> r.relatedOrTrue() && GuidanceResult.PROHIBITED.equals(r.kind()));
         ExpenseReviewStatus status;
-        if (!conflicts.isEmpty()) {
+        if (prohibited) {
+            status = ExpenseReviewStatus.POSSIBLY_RESTRICTED;
+        } else if (!conflicts.isEmpty()) {
             status = ExpenseReviewStatus.POSSIBLE_CONFLICT;
-        } else if (!approvals.isEmpty() || !evidence.isEmpty()) {
+        } else if (!approvals.isEmpty() || !evidence.isEmpty() || !restrictions.isEmpty()) {
             status = ExpenseReviewStatus.PROCEDURE_FOUND;
         } else {
             status = ExpenseReviewStatus.NEEDS_CHECK;
@@ -119,17 +136,66 @@ public final class ExpenseGuidanceValidator {
         int total = dropped.values().stream().mapToInt(Integer::intValue).sum();
         List<String> notes = new ArrayList<>();
         dropped.forEach((reason, count) -> notes.add(reason.label + " " + count + "개를 제외했습니다."));
-        return new Validated(status, approvals, evidence, conflicts, missing, guidance, total, notes);
+        long unrelated = restrictions.stream().filter(r -> !r.relatedOrTrue()).count();
+        if (unrelated > 0) {
+            notes.add("지출 항목과 직접 관련이 없어 보이는 금지·제한 " + unrelated + "개는 따로 표시했습니다. 지우지 않았으니 해당하는지 확인해 주세요.");
+        }
+        if (moved[0] > 0) {
+            notes.add("승인·증빙으로 분류됐지만 인용 구절이 금지·제한을 말하는 항목 " + moved[0]
+                    + "개를 금지·제한으로 옮겼습니다.");
+        }
+        return new Validated(status, approvals, evidence, restrictions, conflicts, missing, guidance, total, notes);
+    }
+
+    private static List<GuidanceResult.Restriction> restrictions(List<ParsedGuidance.Restriction> parsed,
+                                                                 Map<String, Candidate> byName,
+                                                                 Map<Reason, Integer> dropped, String subject) {
+        List<GuidanceResult.Restriction> kept = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (ParsedGuidance.Restriction r : parsed) {
+            Reason problem = problem(new ParsedGuidance.Cited(r.text(), r.clauseNames(), r.quote()), byName);
+            if (problem != null) {
+                dropped.merge(problem, 1, Integer::sum);
+                continue;
+            }
+            if (seen.add(squash(r.text()))) {
+                kept.add(new GuidanceResult.Restriction(r.kind(), r.text(), ids(r.clauseNames(), byName), r.quote(),
+                        RestrictionWords.relatedTo(r.text(), subject)));
+            }
+        }
+        return kept;
     }
 
     private static List<Item> items(List<ParsedGuidance.Cited> cited, Map<String, Candidate> byName,
-                                    Map<Reason, Integer> dropped) {
+                                    Map<Reason, Integer> dropped, List<GuidanceResult.Restriction> restrictions,
+                                    int[] moved, String subject, boolean approval) {
         List<Item> kept = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (ParsedGuidance.Cited c : cited) {
             Reason problem = problem(c, byName);
             if (problem != null) {
                 dropped.merge(problem, 1, Integer::sum);
+                continue;
+            }
+            if (RestrictionWords.isPlainRestriction(c.quote())) {
+                // 인용 구절 자체가 금지·제한이다. AI 의 문구가 아니라 서버가 확인한 인용 구절로 옮긴다.
+                boolean exists = restrictions.stream().anyMatch(r -> squash(r.text()).equals(squash(c.quote())));
+                if (!exists) {
+                    restrictions.add(new GuidanceResult.Restriction(RestrictionWords.kindOf(c.quote()), c.quote(),
+                            ids(c.clauseNames(), byName), c.quote(), RestrictionWords.relatedTo(c.quote(), subject)));
+                }
+                moved[0]++;
+                continue;
+            }
+            // 금지·제한 표현이 있는 조항을 근거로 들었는데 인용 구절에 승인·증빙을 말하는 낱말이 없으면, 금지 조항의
+            // 호만 떼어 승인으로 바꿔 쓴 것일 수 있다. 확정된 사실처럼 보이지 않게 버린다.
+            boolean citesRestrictive = c.clauseNames().stream()
+                    .map(n -> byName.get(normalizeName(n)))
+                    .anyMatch(cand -> cand != null && RestrictionWords.mentionsRestriction(cand.sentText()));
+            boolean supported = approval ? RestrictionWords.supportsApproval(c.quote())
+                    : RestrictionWords.supportsEvidence(c.quote());
+            if (citesRestrictive && !supported) {
+                dropped.merge(Reason.NOT_SUPPORTED, 1, Integer::sum);
                 continue;
             }
             if (!seen.add(squash(c.text()))) {
@@ -158,11 +224,10 @@ public final class ExpenseGuidanceValidator {
         if (hasVerdict(c.text())) {
             return Reason.VERDICT;
         }
-        String quote = squash(c.quote());
-        if (quote.codePointCount(0, quote.length()) < MIN_QUOTE_CHARS) {
+        if (QuoteMatcher.length(c.quote()) < MIN_QUOTE_CHARS) {
             return Reason.BAD_QUOTE;
         }
-        boolean found = cited.stream().anyMatch(candidate -> squash(candidate.sentText()).contains(quote));
+        boolean found = cited.stream().anyMatch(candidate -> QuoteMatcher.isVerbatim(candidate.sentText(), c.quote()));
         return found ? null : Reason.BAD_QUOTE;
     }
 
