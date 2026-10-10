@@ -2,7 +2,7 @@
 resource "ncloud_auto_scaling_group" "ubuntu_app" {
   for_each                     = var.enable_ubuntu_app_groups ? local.zones : {}
   name                         = "council-ubuntu-app-asg-${each.key}"
-  server_name_prefix           = "cfub-${each.key}"
+  server_name_prefix           = each.key == "a" ? "app-kr1" : "app-kr2"
   subnet_no                    = ncloud_subnet.council["app_${each.key}"].id
   access_control_group_no_list = [ncloud_access_control_group.council["app"].id]
   launch_configuration_no      = var.app_launch_configuration_no

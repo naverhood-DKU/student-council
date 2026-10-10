@@ -1,14 +1,14 @@
 [
   {
-    "ruleId": "11905",
+    "ruleId": "11911",
     "request": {
       "prodKey": "460438474722512896",
-      "groupName": "council-asg-a-cpu-out",
+      "groupName": "council-ubuntu-asg-a-cpu-out",
       "groupDesc": "Zone a: ASG CPU GT 80% for 3 min. Initial capacity draft, min1/max2. No external notifications.",
       "metricsGroup": {
         "prodKey": "460438474722512896",
         "prodType": "system",
-        "groupName": "council-asg-a-cpu-out-metrics",
+        "groupName": "council-ubuntu-asg-a-cpu-out-metrics",
         "temporaryGroup": true,
         "metricsGroupItems": [
           {
@@ -30,20 +30,20 @@
       "monitorGroup": {
         "prodKey": "460438474722512896",
         "prodName": "Server(VPC)",
-        "groupName": "council-asg-a-cpu-out-target",
+        "groupName": "council-ubuntu-asg-a-cpu-out-target",
         "temporaryGroup": true,
         "type": "ASG",
         "monitorGroupItemList": [
           {
-            "resourceId": 109051
+            "resourceId": 109054
           }
         ]
       },
       "asgPolicys": [
         {
-          "autoScalingGroupNo": 109051,
-          "autoScalingPolicyNo": 37871,
-          "policyName": "council-app-a-out"
+          "autoScalingGroupNo": 109054,
+          "autoScalingPolicyNo": 37877,
+          "policyName": "council-ubuntu-app-a-out"
         }
       ],
       "recipientNotifications": [],
@@ -51,15 +51,15 @@
     }
   },
   {
-    "ruleId": "11906",
+    "ruleId": "11912",
     "request": {
       "prodKey": "460438474722512896",
-      "groupName": "council-asg-a-cpu-in",
+      "groupName": "council-ubuntu-asg-a-cpu-in",
       "groupDesc": "Zone a: ASG CPU LT 30% for 10 min. Initial capacity draft, min1/max2. No external notifications.",
       "metricsGroup": {
         "prodKey": "460438474722512896",
         "prodType": "system",
-        "groupName": "council-asg-a-cpu-in-metrics",
+        "groupName": "council-ubuntu-asg-a-cpu-in-metrics",
         "temporaryGroup": true,
         "metricsGroupItems": [
           {
@@ -81,20 +81,20 @@
       "monitorGroup": {
         "prodKey": "460438474722512896",
         "prodName": "Server(VPC)",
-        "groupName": "council-asg-a-cpu-in-target",
+        "groupName": "council-ubuntu-asg-a-cpu-in-target",
         "temporaryGroup": true,
         "type": "ASG",
         "monitorGroupItemList": [
           {
-            "resourceId": 109051
+            "resourceId": 109054
           }
         ]
       },
       "asgPolicys": [
         {
-          "autoScalingGroupNo": 109051,
-          "autoScalingPolicyNo": 37868,
-          "policyName": "council-app-a-in"
+          "autoScalingGroupNo": 109054,
+          "autoScalingPolicyNo": 37875,
+          "policyName": "council-ubuntu-app-a-in"
         }
       ],
       "recipientNotifications": [],
@@ -102,15 +102,15 @@
     }
   },
   {
-    "ruleId": "11907",
+    "ruleId": "11913",
     "request": {
       "prodKey": "460438474722512896",
-      "groupName": "council-asg-b-cpu-out",
+      "groupName": "council-ubuntu-asg-b-cpu-out",
       "groupDesc": "Zone b: ASG CPU GT 80% for 3 min. Initial capacity draft, min1/max2. No external notifications.",
       "metricsGroup": {
         "prodKey": "460438474722512896",
         "prodType": "system",
-        "groupName": "council-asg-b-cpu-out-metrics",
+        "groupName": "council-ubuntu-asg-b-cpu-out-metrics",
         "temporaryGroup": true,
         "metricsGroupItems": [
           {
@@ -132,20 +132,20 @@
       "monitorGroup": {
         "prodKey": "460438474722512896",
         "prodName": "Server(VPC)",
-        "groupName": "council-asg-b-cpu-out-target",
+        "groupName": "council-ubuntu-asg-b-cpu-out-target",
         "temporaryGroup": true,
         "type": "ASG",
         "monitorGroupItemList": [
           {
-            "resourceId": 109052
+            "resourceId": 109055
           }
         ]
       },
       "asgPolicys": [
         {
-          "autoScalingGroupNo": 109052,
-          "autoScalingPolicyNo": 37870,
-          "policyName": "council-app-b-out"
+          "autoScalingGroupNo": 109055,
+          "autoScalingPolicyNo": 37876,
+          "policyName": "council-ubuntu-app-b-out"
         }
       ],
       "recipientNotifications": [],
@@ -153,15 +153,15 @@
     }
   },
   {
-    "ruleId": "11908",
+    "ruleId": "11914",
     "request": {
       "prodKey": "460438474722512896",
-      "groupName": "council-asg-b-cpu-in",
+      "groupName": "council-ubuntu-asg-b-cpu-in",
       "groupDesc": "Zone b: ASG CPU LT 30% for 10 min. Initial capacity draft, min1/max2. No external notifications.",
       "metricsGroup": {
         "prodKey": "460438474722512896",
         "prodType": "system",
-        "groupName": "council-asg-b-cpu-in-metrics",
+        "groupName": "council-ubuntu-asg-b-cpu-in-metrics",
         "temporaryGroup": true,
         "metricsGroupItems": [
           {
@@ -183,20 +183,20 @@
       "monitorGroup": {
         "prodKey": "460438474722512896",
         "prodName": "Server(VPC)",
-        "groupName": "council-asg-b-cpu-in-target",
+        "groupName": "council-ubuntu-asg-b-cpu-in-target",
         "temporaryGroup": true,
         "type": "ASG",
         "monitorGroupItemList": [
           {
-            "resourceId": 109052
+            "resourceId": 109055
           }
         ]
       },
       "asgPolicys": [
         {
-          "autoScalingGroupNo": 109052,
-          "autoScalingPolicyNo": 37869,
-          "policyName": "council-app-b-in"
+          "autoScalingGroupNo": 109055,
+          "autoScalingPolicyNo": 37874,
+          "policyName": "council-ubuntu-app-b-in"
         }
       ],
       "recipientNotifications": [],

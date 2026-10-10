@@ -14,12 +14,17 @@ output "nat_public_ips" {
 }
 
 output "management" {
-  value = var.enable_management ? {
+  value = var.enable_management ? (var.enable_legacy_compute ? {
     server_id  = ncloud_server.bastion[0].id
     public_ip  = ncloud_public_ip.bastion[0].public_ip
     private_ip = ncloud_network_interface.bastion[0].private_ip
     ssh_user   = "counciladmin"
-  } : null
+    } : {
+    server_id  = ncloud_server.ubuntu["bastion"].id
+    public_ip  = ncloud_public_ip.ubuntu_bastion[0].public_ip
+    private_ip = ncloud_network_interface.ubuntu["bastion"].private_ip
+    ssh_user   = "counciladmin"
+  }) : null
 }
 
 output "application" {
@@ -39,10 +44,24 @@ output "application" {
 }
 
 output "app_autoscaling" {
-  value = { for zone, group in ncloud_auto_scaling_group.app : zone => {
+  value = var.enable_ubuntu_app_groups ? { for zone, group in ncloud_auto_scaling_group.ubuntu_app : zone => {
+    group_id            = group.id
+    server_ids          = group.server_instance_no_list
+    scale_out_policy_id = ncloud_auto_scaling_policy.ubuntu_scale_out[zone].id
+    scale_in_policy_id  = ncloud_auto_scaling_policy.ubuntu_scale_in[zone].id
+    } } : { for zone, group in ncloud_auto_scaling_group.app : zone => {
     group_id            = group.id
     server_ids          = group.server_instance_no_list
     scale_out_policy_id = ncloud_auto_scaling_policy.scale_out[zone].id
     scale_in_policy_id  = ncloud_auto_scaling_policy.scale_in[zone].id
+  } }
+}
+
+output "ubuntu_app_autoscaling" {
+  value = { for zone, group in ncloud_auto_scaling_group.ubuntu_app : zone => {
+    group_id            = group.id
+    server_ids          = group.server_instance_no_list
+    scale_out_policy_id = ncloud_auto_scaling_policy.ubuntu_scale_out[zone].id
+    scale_in_policy_id  = ncloud_auto_scaling_policy.ubuntu_scale_in[zone].id
   } }
 }

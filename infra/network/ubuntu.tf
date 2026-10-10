@@ -26,7 +26,7 @@ resource "ncloud_network_interface" "ubuntu" {
 
 resource "ncloud_server" "ubuntu" {
   for_each             = local.ubuntu_hosts
-  name                 = "council-ubuntu-${each.key}"
+  name                 = each.key == "builder" ? "council-build-app-kr1" : "council-prod-${each.key}-kr1"
   zone                 = "KR-1"
   subnet_no            = ncloud_subnet.council[each.value.subnet].id
   server_image_number  = "104630229"

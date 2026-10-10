@@ -1,6 +1,6 @@
 # Ubuntu Runtime Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Deploy the reviewed meeting-branch UI and migrate self-managed Bastion, App and Worker to Ubuntu without replacing the production database.
 
@@ -39,21 +39,21 @@ Consumes: existing VPC/ACGs/login-key and Task 1 SSH template. Produces: paralle
 - [x] Add opt-in `enable_ubuntu_migration=false`; new hosts use image 104630229 and private addresses 10.30.1.11, 10.30.20.11, 10.30.10.11. Bastion c2-g3, others s2-g3; use existing SSH public key/login key/ACGs.
 - [x] Validate `terraform fmt -check`, `terraform validate`, existing `terraform test`; inspect saved real plan. Only creation of three NICs, three servers, one init script and one public IP is permitted in this stage.
 - [x] Back up protected state. Apply reviewed plan; record IDs. Verify `/etc/os-release`, SSH effective config, Java 21 apt installation and DB reachability via SSH.
-- [ ] Build jar with JDK21 `./mvnw verify`; install reviewed new UI jar on builder, private environment, seed disabled. Verify login/current groups unchanged.
+- [x] Build jar with JDK21 `./mvnw verify`; install reviewed new UI jar on builder, private environment, seed disabled. Verify login/current groups unchanged.
 - [x] Commit and push branch; share evidence, not keys.
 
 ### Task 3: App and Worker cutover
 Consumes: verified builder and jar. Produces: Ubuntu image/LC and live Ubuntu services.
-- [ ] Stop builder; create private snapshot/image using official NCP API. Wait until image state CREAT; create G3 launch configuration using image and s2-g3.
-- [ ] Update Terraform app_launch_configuration_no to the new LC. Inspect plan: only ASG launch configuration changes, no DB/network destruction. Apply and read actual API configurations.
-- [ ] Create isolated Ubuntu ASGs in both zones using `infra/network/ubuntu-autoscaling.tf`. Verify both new servers in LB and by SSH/login. Only then retire the entire previous groups (109051/109052); ambiguous mixed-group scale-in was rejected by approval review and must not be retried. Record public API errors across the cutover.
-- [ ] Install Worker runtime on replacement with production worker profile and existing real CLOVA key. Stop old Worker, start replacement, submit one synthetic meeting analysis and prove SUCCEEDED with valid source references.
-- [ ] Switch management SSH config to new Bastion; verify both App zones and Worker through the new management path before retiring old Bastion/Worker/builder.
+- [x] Stop builder; create private snapshot/image using official NCP API. Wait until image state CREAT; create G3 launch configuration using image and s2-g3.
+- [x] Update Terraform app_launch_configuration_no to the new LC. Inspect plan before the corresponding migration step; preserve DB/network. Final cutover uses isolated Ubuntu groups. Apply and read actual API configurations.
+- [x] Create isolated Ubuntu ASGs in both zones using `infra/network/ubuntu-autoscaling.tf`. Verify both new servers in LB and by SSH/login. Only then retire the entire previous groups (109051/109052); ambiguous mixed-group scale-in was rejected by approval review and must not be retried. Record public API errors across the cutover.
+- [x] Install Worker runtime on replacement with production worker profile and existing real CLOVA key. Stop old Worker, start replacement, submit one synthetic meeting analysis and prove SUCCEEDED with valid source references.
+- [x] Switch management SSH config to new Bastion; verify both App zones and Worker through the new management path before retiring old Bastion/Worker/builder.
 
 ### Task 4: Verification, documentation and review
 Files: `docs/infra.md`, `infra/monitoring/`, existing deployment plan; protected evidence outputs.
-- [ ] Verify all active self-managed hosts report Ubuntu 24.04; real API approvals/group workflow, bucket unsigned 403, no public DB, both LB targets healthy.
-- [ ] Update Cloud Insight bootstrap targets to new hosts; retain ASG CPU events. Query actual metric data.
-- [ ] Update resource IDs, private IPs, OS, rollback artifacts and deletion/cost inventory; final Terraform plan must have zero changes.
+- [x] Verify all active self-managed hosts report Ubuntu 24.04; real API approvals/group workflow, bucket unsigned 403, no public DB, both LB targets healthy.
+- [x] Update Cloud Insight bootstrap targets to new hosts; retain ASG CPU events. Query actual metric data.
+- [x] Update resource IDs, private IPs, OS, rollback artifacts and deletion/cost inventory; final Terraform plan must have zero changes.
 - [ ] Open public UI and verify desktop/mobile meeting branches, preview badge for recording, draft persistence and group permissions; save screenshot.
 - [ ] Run whole-branch fresh review, fix critical/important findings with regression evidence, push draft PR and attach. Shared main is not merged automatically.

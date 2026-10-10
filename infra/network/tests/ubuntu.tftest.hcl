@@ -1,6 +1,8 @@
 mock_provider "ncloud" {}
 
 variables {
+  enable_legacy_compute     = true
+  enable_legacy_app_groups  = true
   enable_ubuntu_app_groups  = false
   admin_ipv4_cidr           = "198.51.100.10/32"
   enable_management         = true
@@ -49,5 +51,21 @@ run "ubuntu_groups_isolate_verified_replacements" {
   assert {
     condition     = length(ncloud_auto_scaling_group.ubuntu_app) == 2 && length(ncloud_auto_scaling_group.app) == 2 && alltrue([for key, group in ncloud_auto_scaling_group.ubuntu_app : group.name == "council-ubuntu-app-asg-${key}" && group.min_size == 1 && group.max_size == 2 && group.launch_configuration_no == "39685" && group.health_check_type_code == "LOADB"])
     error_message = "New Ubuntu groups must be independent of the legacy groups with one healthy App per zone and bounded scaling."
+  }
+}
+
+run "retirement_preserves_data_and_ubuntu_management" {
+  command = apply
+  variables {
+    enable_ubuntu_migration     = true
+    enable_ubuntu_app_groups    = true
+    enable_autoscaling          = true
+    app_launch_configuration_no = "39685"
+    enable_legacy_compute       = false
+    enable_legacy_app_groups    = false
+  }
+  assert {
+    condition     = length(ncloud_server.bastion) == 0 && length(ncloud_server.bootstrap) == 0 && length(ncloud_auto_scaling_group.app) == 0 && length(ncloud_public_ip.bastion) == 0 && length(ncloud_server.ubuntu) == 3 && length(ncloud_auto_scaling_group.ubuntu_app) == 2 && length(ncloud_login_key.council) == 1 && length(ncloud_mysql.council) == 1 && length(ncloud_lb.council) == 1 && output.management.server_id == ncloud_server.ubuntu["bastion"].id && output.app_autoscaling["a"].group_id == ncloud_auto_scaling_group.ubuntu_app["a"].id
+    error_message = "Retire only replaced legacy compute; preserve Ubuntu access, managed DB, LB and login key."
   }
 }

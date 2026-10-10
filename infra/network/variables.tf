@@ -111,3 +111,23 @@ variable "enable_ubuntu_app_groups" {
     error_message = "Ubuntu App groups require the prepared migration hosts and launch configuration."
   }
 }
+
+variable "enable_legacy_compute" {
+  description = "Retain Rocky Bastion and bootstrap compute until Ubuntu cutover is verified."
+  type        = bool
+  default     = true
+  validation {
+    condition     = var.enable_legacy_compute || var.enable_ubuntu_migration
+    error_message = "Do not retire legacy management/Worker without Ubuntu replacements."
+  }
+}
+
+variable "enable_legacy_app_groups" {
+  description = "Retain previous mixed-OS ASGs until both isolated Ubuntu groups are healthy."
+  type        = bool
+  default     = true
+  validation {
+    condition     = var.enable_legacy_app_groups || var.enable_ubuntu_app_groups
+    error_message = "Do not retire legacy App groups without isolated Ubuntu replacements."
+  }
+}
