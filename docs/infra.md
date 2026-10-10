@@ -38,6 +38,8 @@ CPU 80% 초과 3분에 +1(쿨다운 300초), 30% 미만 10분에 -1(600초). 초
 
 ### 배포·검증·남은 한계
 
+- 최종 이름 정리 후 실제 Terraform plan 변경 0개, validate 성공.
+- 공개 브라우저에서 결정·부서 분기, 원문 근거, 모바일 390px 가로 넘침 없음 및 검토창 초안 유지 확인.
 - 앱 전체 테스트 86개, frontend 3개, runtime 3개, Terraform mock 15개 통과.
 - Ubuntu Worker 실제 작업 5 SUCCEEDED. 공개 API에서 근거 원문 일치, 승인·업무 요청 DONE, 미인증 401·다른 그룹 403·버전 충돌 409 확인.
 - 새 두 존 App을 검증한 후 이전 ASG를 퇴역시켰다. 이전 관리·Worker·builder·ASG 관련 Terraform 자원 15개 삭제 완료. DB·LB·네트워크·비공개 버킷 유지.
