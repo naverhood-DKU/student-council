@@ -17,6 +17,9 @@ frontend/dist/
 !*.tfvars.example
 .terraform/
 .terraform.lock.hcl.bak
+*.tfplan
+crash.log
+crash.*.log
 
 # 기획서 원본과 Office 잠금 파일
 *.docx

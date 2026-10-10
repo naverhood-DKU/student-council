@@ -1,0 +1,4 @@
+# Documentation address only. Replace with your real public IPv4 /32 locally.
+admin_ipv4_cidr = "198.51.100.10/32"
+enable_nat = false
+allow_bootstrap_http = true

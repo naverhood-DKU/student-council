@@ -1,0 +1,33 @@
+name: Terraform Network
+
+on:
+  pull_request:
+    paths:
+      - 'infra/network/**'
+      - '.github/workflows/infra.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/network/**'
+      - '.github/workflows/infra.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/network
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.16.4'
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      # Mock provider only; no NCP keys, real plan or apply in CI.
+      - run: terraform test -no-color
