@@ -6,6 +6,7 @@ import {
   type DecisionOption,
   type ExpenseChecklistItem,
   type ExpenseClauseRef,
+  type ExpenseRestriction,
   type ExpenseReviewStatus,
   type ExpenseReviewSummary,
   type ExpenseReviewView,
@@ -19,12 +20,13 @@ export const EXPENSE_STATUS_LABEL: Record<ExpenseReviewStatus, string> = {
   NEEDS_CHECK: '확인 필요',
   PROCEDURE_FOUND: '절차 확인',
   POSSIBLE_CONFLICT: '충돌 가능',
+  POSSIBLY_RESTRICTED: '금지 가능성',
   REVIEWED: '검토 완료',
 }
 
 /** 상태 배지 색: 확인 필요·충돌 가능은 눈에 띄게, 검토 완료는 조용하게 */
 function statusChip(status: ExpenseReviewStatus): string {
-  if (status === 'NEEDS_CHECK' || status === 'POSSIBLE_CONFLICT') return 'chip warn'
+  if (status === 'NEEDS_CHECK' || status === 'POSSIBLE_CONFLICT' || status === 'POSSIBLY_RESTRICTED') return 'chip warn'
   if (status === 'REVIEWED') return 'chip subtle'
   return 'chip'
 }
@@ -313,6 +315,28 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
 
       {guidance && (
         <>
+          {guidance.restrictions.some((r) => r.related) && (
+            <>
+              <h3>사용 금지·제한</h3>
+              <p className="muted small">
+                후보 조항 중 이 지출의 사용을 막거나 한도·조건을 두는 내용입니다. 규정에 따를 절차가 있다는 뜻이 아닙니다.
+                이 지출이 실제로 여기에 해당하는지는 조항 원문으로 직접 확인해 주세요.
+              </p>
+              <Restrictions items={guidance.restrictions.filter((r) => r.related)} />
+            </>
+          )}
+          {guidance.restrictions.some((r) => !r.related) && (
+            <details className="card small">
+              <summary>
+                지출 항목과 직접 관련이 없어 보이는 다른 금지·제한 {guidance.restrictions.filter((r) => !r.related).length}개 (참고)
+              </summary>
+              <p className="muted small">
+                같은 조항에 함께 있어 AI 가 함께 낸 내용입니다. 글자가 겹치지 않아 이 지출과 관련이 없어 보이지만,
+                해당하는지는 조항 원문으로 확인해 주세요.
+              </p>
+              <Restrictions items={guidance.restrictions.filter((r) => !r.related)} />
+            </details>
+          )}
           <h3>필요한 승인</h3>
           <Checklist items={approvals} editable={editable} busy={busy} onToggle={toggle}
                      empty="후보 조항에서 서버가 확인한 필요 승인이 없습니다. 조항 원문을 직접 확인해 주세요." />
@@ -360,9 +384,13 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
             </>
           )}
 
-          {guidance.droppedCount > 0 && (
+          {guidance.droppedNotes.length > 0 && (
             <div className="card small" role="status">
-              <strong>서버 검증에서 {guidance.droppedCount}개 항목을 제외했습니다.</strong>
+              <strong>
+                {guidance.droppedCount > 0
+                  ? `서버 검증에서 ${guidance.droppedCount}개 항목을 제외했습니다.`
+                  : '서버가 AI 안내를 조정했습니다.'}
+              </strong>
               <ul className="expense-list">
                 {guidance.droppedNotes.map((n) => <li key={n}>{n}</li>)}
               </ul>
@@ -413,6 +441,7 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
               <span className="chips">
                 <span className="chip subtle">{c.docTitle}</span>
                 {c.docStatus !== 'CONFIRMED' && <span className="chip warn">폐기됨</span>}
+                {c.mentionsRestriction && <span className="chip warn">금지·제한 표현 포함</span>}
               </span>
             </div>
             <p className="muted small">
@@ -425,6 +454,28 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
       </ul>
       {review.searchText && <p className="muted small">찾는 데 쓴 말: {review.searchText}</p>}
     </>
+  )
+}
+
+function Restrictions({ items }: { items: ExpenseRestriction[] }) {
+  return (
+    <ul className="card-list">
+      {items.map((r) => (
+        <li key={`${r.kind}-${r.text}`} className="card warn-card">
+          <p>
+            <span className="chip warn">{r.kind === 'PROHIBITED' ? '금지' : '한도·조건'}</span>{' '}
+            <strong>{r.text}</strong>
+          </p>
+          {r.quote !== r.text && (
+            <blockquote className="expense-quote">
+              <span className="muted small">원문에서 확인된 구절</span>
+              <span className="block">{r.quote}</span>
+            </blockquote>
+          )}
+          <ClauseLinks clauses={r.clauses} />
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -449,6 +500,11 @@ function Checklist({ items, editable, busy, empty, onToggle }: {
             <span className="block">{item.quote}</span>
           </blockquote>
           <ClauseLinks clauses={item.clauses} />
+          {item.clauses.some((c) => c.mentionsRestriction) && (
+            <p className="error small" role="note">
+              근거 조항에 금지·제한 표현이 있습니다. 승인·증빙이 아니라 사용을 막는 조항일 수 있으니 원문을 확인해 주세요.
+            </p>
+          )}
         </li>
       ))}
     </ul>

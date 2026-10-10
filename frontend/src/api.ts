@@ -496,7 +496,7 @@ export interface RuleDocInput {
 // ---- 지출 절차 검토 ----
 
 export type ExpenseReviewStatus =
-  | 'CANDIDATES_FOUND' | 'NEEDS_CHECK' | 'PROCEDURE_FOUND' | 'POSSIBLE_CONFLICT' | 'REVIEWED'
+  | 'CANDIDATES_FOUND' | 'NEEDS_CHECK' | 'PROCEDURE_FOUND' | 'POSSIBLE_CONFLICT' | 'POSSIBLY_RESTRICTED' | 'REVIEWED'
 
 export interface ExpenseCandidate {
   clauseId: number
@@ -510,6 +510,8 @@ export interface ExpenseCandidate {
   docVersion: string | null
   docEffectiveDate: string | null
   docStatus: RuleDocStatus
+  /** 이 조항 글에 금지·제한 표현이 있다(서버의 낱말 검사) */
+  mentionsRestriction: boolean
 }
 
 /** 근거 조항으로 연결하기 위한 짧은 참조(조항 원문은 candidates 에서 읽는다) */
@@ -517,6 +519,18 @@ export interface ExpenseClauseRef {
   clauseId: number
   label: string
   docTitle: string
+  /** 근거 조항 글에 금지·제한 표현이 있다 */
+  mentionsRestriction: boolean
+}
+
+/** 사용을 금지(PROHIBITED)하거나 한도·조건을 두는(LIMITED) 조항 내용. quote 는 원문에서 확인된 구절 */
+export interface ExpenseRestriction {
+  kind: 'PROHIBITED' | 'LIMITED'
+  text: string
+  clauses: ExpenseClauseRef[]
+  quote: string
+  /** 지출 항목과 직접 관련 있어 보이는가(서버의 글자 조각 비교). 관련 없어 보여도 지우지 않는다. */
+  related: boolean
 }
 
 /** 필요한 승인(APPROVAL) 또는 필요한 증빙(EVIDENCE). 서버가 인용 구절을 조항 원문에서 확인한 것만 온다. */
@@ -539,7 +553,8 @@ export interface ExpenseConflict {
 
 /** 서버 검증을 통과한 AI 안내. note 는 조항으로 확인된 내용이 아니라 참고용이다. */
 export interface ExpenseGuidance {
-  outcome: 'PROCEDURE_FOUND' | 'POSSIBLE_CONFLICT' | 'NEEDS_CHECK'
+  outcome: 'PROCEDURE_FOUND' | 'POSSIBLE_CONFLICT' | 'POSSIBLY_RESTRICTED' | 'NEEDS_CHECK'
+  restrictions: ExpenseRestriction[]
   conflicts: ExpenseConflict[]
   missingFacts: string[]
   note: string | null
