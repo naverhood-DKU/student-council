@@ -1,0 +1,206 @@
+[
+  {
+    "ruleId": "11905",
+    "request": {
+      "prodKey": "460438474722512896",
+      "groupName": "council-asg-a-cpu-out",
+      "groupDesc": "Zone a: ASG CPU GT 80% for 3 min. Initial capacity draft, min1/max2. No external notifications.",
+      "metricsGroup": {
+        "prodKey": "460438474722512896",
+        "prodType": "system",
+        "groupName": "council-asg-a-cpu-out-metrics",
+        "temporaryGroup": true,
+        "metricsGroupItems": [
+          {
+            "metric": "avg_cpu_used_rto",
+            "eventLevel": "INFO",
+            "condition": "GT",
+            "calculation": "AVG",
+            "duration": 3,
+            "threshold": 80,
+            "dimensions": [],
+            "options": {
+              "Min1": [
+                "AVG"
+              ]
+            }
+          }
+        ]
+      },
+      "monitorGroup": {
+        "prodKey": "460438474722512896",
+        "prodName": "Server(VPC)",
+        "groupName": "council-asg-a-cpu-out-target",
+        "temporaryGroup": true,
+        "type": "ASG",
+        "monitorGroupItemList": [
+          {
+            "resourceId": 109051
+          }
+        ]
+      },
+      "asgPolicys": [
+        {
+          "autoScalingGroupNo": 109051,
+          "autoScalingPolicyNo": 37871,
+          "policyName": "council-app-a-out"
+        }
+      ],
+      "recipientNotifications": [],
+      "personalNotificationRecipients": []
+    }
+  },
+  {
+    "ruleId": "11906",
+    "request": {
+      "prodKey": "460438474722512896",
+      "groupName": "council-asg-a-cpu-in",
+      "groupDesc": "Zone a: ASG CPU LT 30% for 10 min. Initial capacity draft, min1/max2. No external notifications.",
+      "metricsGroup": {
+        "prodKey": "460438474722512896",
+        "prodType": "system",
+        "groupName": "council-asg-a-cpu-in-metrics",
+        "temporaryGroup": true,
+        "metricsGroupItems": [
+          {
+            "metric": "avg_cpu_used_rto",
+            "eventLevel": "INFO",
+            "condition": "LT",
+            "calculation": "AVG",
+            "duration": 10,
+            "threshold": 30,
+            "dimensions": [],
+            "options": {
+              "Min1": [
+                "AVG"
+              ]
+            }
+          }
+        ]
+      },
+      "monitorGroup": {
+        "prodKey": "460438474722512896",
+        "prodName": "Server(VPC)",
+        "groupName": "council-asg-a-cpu-in-target",
+        "temporaryGroup": true,
+        "type": "ASG",
+        "monitorGroupItemList": [
+          {
+            "resourceId": 109051
+          }
+        ]
+      },
+      "asgPolicys": [
+        {
+          "autoScalingGroupNo": 109051,
+          "autoScalingPolicyNo": 37868,
+          "policyName": "council-app-a-in"
+        }
+      ],
+      "recipientNotifications": [],
+      "personalNotificationRecipients": []
+    }
+  },
+  {
+    "ruleId": "11907",
+    "request": {
+      "prodKey": "460438474722512896",
+      "groupName": "council-asg-b-cpu-out",
+      "groupDesc": "Zone b: ASG CPU GT 80% for 3 min. Initial capacity draft, min1/max2. No external notifications.",
+      "metricsGroup": {
+        "prodKey": "460438474722512896",
+        "prodType": "system",
+        "groupName": "council-asg-b-cpu-out-metrics",
+        "temporaryGroup": true,
+        "metricsGroupItems": [
+          {
+            "metric": "avg_cpu_used_rto",
+            "eventLevel": "INFO",
+            "condition": "GT",
+            "calculation": "AVG",
+            "duration": 3,
+            "threshold": 80,
+            "dimensions": [],
+            "options": {
+              "Min1": [
+                "AVG"
+              ]
+            }
+          }
+        ]
+      },
+      "monitorGroup": {
+        "prodKey": "460438474722512896",
+        "prodName": "Server(VPC)",
+        "groupName": "council-asg-b-cpu-out-target",
+        "temporaryGroup": true,
+        "type": "ASG",
+        "monitorGroupItemList": [
+          {
+            "resourceId": 109052
+          }
+        ]
+      },
+      "asgPolicys": [
+        {
+          "autoScalingGroupNo": 109052,
+          "autoScalingPolicyNo": 37870,
+          "policyName": "council-app-b-out"
+        }
+      ],
+      "recipientNotifications": [],
+      "personalNotificationRecipients": []
+    }
+  },
+  {
+    "ruleId": "11908",
+    "request": {
+      "prodKey": "460438474722512896",
+      "groupName": "council-asg-b-cpu-in",
+      "groupDesc": "Zone b: ASG CPU LT 30% for 10 min. Initial capacity draft, min1/max2. No external notifications.",
+      "metricsGroup": {
+        "prodKey": "460438474722512896",
+        "prodType": "system",
+        "groupName": "council-asg-b-cpu-in-metrics",
+        "temporaryGroup": true,
+        "metricsGroupItems": [
+          {
+            "metric": "avg_cpu_used_rto",
+            "eventLevel": "INFO",
+            "condition": "LT",
+            "calculation": "AVG",
+            "duration": 10,
+            "threshold": 30,
+            "dimensions": [],
+            "options": {
+              "Min1": [
+                "AVG"
+              ]
+            }
+          }
+        ]
+      },
+      "monitorGroup": {
+        "prodKey": "460438474722512896",
+        "prodName": "Server(VPC)",
+        "groupName": "council-asg-b-cpu-in-target",
+        "temporaryGroup": true,
+        "type": "ASG",
+        "monitorGroupItemList": [
+          {
+            "resourceId": 109052
+          }
+        ]
+      },
+      "asgPolicys": [
+        {
+          "autoScalingGroupNo": 109052,
+          "autoScalingPolicyNo": 37869,
+          "policyName": "council-app-b-in"
+        }
+      ],
+      "recipientNotifications": [],
+      "personalNotificationRecipients": []
+    }
+  }
+]

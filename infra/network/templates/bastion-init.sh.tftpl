@@ -1,0 +1,33 @@
+#!/bin/bash
+set -euo pipefail
+
+id counciladmin >/dev/null 2>&1 || useradd --create-home --shell /bin/bash counciladmin
+install -d -m 700 -o counciladmin -g counciladmin /home/counciladmin/.ssh
+cat > /home/counciladmin/.ssh/authorized_keys <<'PUBLIC_KEY'
+${ssh_public_key}
+PUBLIC_KEY
+chown counciladmin:counciladmin /home/counciladmin/.ssh/authorized_keys
+chmod 600 /home/counciladmin/.ssh/authorized_keys
+restorecon -RF /home/counciladmin/.ssh
+
+cat > /etc/sudoers.d/counciladmin <<'SUDOERS'
+counciladmin ALL=(ALL) NOPASSWD:ALL
+SUDOERS
+chmod 440 /etc/sudoers.d/counciladmin
+visudo -cf /etc/sudoers.d/counciladmin
+
+install -d -m 755 /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/00-council.conf <<'SSHD'
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+AllowUsers counciladmin
+SSHD
+chmod 600 /etc/ssh/sshd_config.d/00-council.conf
+# Read managed settings first; OpenSSH takes the first global value.
+sed -i '\|^Include /etc/ssh/sshd_config.d/00-council.conf$|d' /etc/ssh/sshd_config
+sed -i '1iInclude /etc/ssh/sshd_config.d/00-council.conf' /etc/ssh/sshd_config
+/usr/sbin/sshd -t
+systemctl reload sshd

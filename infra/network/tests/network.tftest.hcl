@@ -1,7 +1,12 @@
 mock_provider "ncloud" {}
 
 variables {
-  admin_ipv4_cidr = "198.51.100.10/32"
+  enable_application        = false
+  enable_autoscaling        = false
+  admin_ipv4_cidr           = "198.51.100.10/32"
+  enable_nat                = false
+  enable_management         = false
+  management_ssh_public_key = ""
 }
 
 run "network_without_paid_nat" {

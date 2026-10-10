@@ -2,3 +2,17 @@
 admin_ipv4_cidr = "198.51.100.10/32"
 enable_nat = false
 allow_bootstrap_http = true
+enable_management = false
+# Set a real SSH public key locally before enabling management.
+management_ssh_public_key = ""
+
+# Add application resources after reviewing the paid-resource plan.
+enable_application = false
+recording_bucket_name = ""
+# Use a generated secret locally; NEVER commit the real terraform.tfvars.
+database_password = ""
+
+# Prepare the private App image and create a G3 Launch Configuration through
+# the official API before enabling the two zone-specific ASGs.
+enable_autoscaling = false
+app_launch_configuration_no = ""
