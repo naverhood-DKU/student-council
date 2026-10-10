@@ -153,3 +153,22 @@ import 이후 축소 정책의 cooldown을 provider가 null로 읽었지만 공�
 최종 검증: 전체 Terraform state 52개, taint 없음, 실제 plan 변경 0개, mock 테스트 11개 통과. 장애 복구 후 공개 로그인·내 계정 조회 200. 비밀 값 변경 파일 검사 0건.
 
 최종 독립 리뷰: 중요한 문제 1건(재배포 시 실행 중 JVM 미갱신)을 enable 후 restart·기동 확인으로 수정했다. 회귀 테스트가 실패 후 통과했으며 CI에도 포함했다.
+
+
+## Ubuntu 전환 진행 (2026-10-10)
+
+수업 환경과 맞추기 위해 self-managed 서버를 Ubuntu 24.04 LTS로 전환한다. 관리형 MySQL은 기존 서비스와 데이터를 유지한다. 기존 Rocky 서버는 새 관리 경로와 서비스 검증이 끝날 때까지 유지한다.
+
+| 준비 자원 | ID / 주소 | 확인 상태 |
+|---|---|---|
+| Ubuntu Bastion | 146197393 / 10.30.1.11 / 223.130.143.82 | Ubuntu 24.04.1, root·비밀번호 SSH 차단, 공개키 접속 확인 |
+| Ubuntu 이미지 준비 서버 | 146197391 / 10.30.10.11 | Java 21.0.11, 개선 UI jar 설치, DB 포함 health UP; 스냅샷 후 정지 |
+| Ubuntu Worker | 146197397 / 10.30.20.11 | Java 21.0.11, jar·설정 staging 준비; 아직 폴링 시작 안 함 |
+| Ubuntu App 스냅샷 / 이미지 | 146197564 / 146197588 | 비공개, 부팅 가능, CREAT |
+| Ubuntu Launch Configuration | 39685 | s2-g3, init script 1314015; ASG 109051·109052 생성 설정 갱신 완료 |
+
+신규 서버에는 `apt-get install openjdk-21-jre-headless`로 Java 21을 설치한다. 런타임은 배포판별 JDK 디렉터리 대신 `/usr/bin/java`를 사용하며, 설치 스크립트가 Java 21인지 확인한 후 jar·환경설정을 교체한다. service 재시작과 is-active를 확인한다.
+
+검증: 새 UI 포함 JDK21 `./mvnw verify` 86/86, frontend test 3/3, runtime test 3/3, Terraform mock 13/13 통과. 이 단계의 실제 Terraform은 병렬 자원 8개 생성 후 ASG 설정 2개 변경만 수행했으며 기존 자원 삭제는 없었다.
+
+아직 공개 URL은 전환 중이며, 최종 Ubuntu App·Worker 검증과 Rocky 자원 정리는 완료 전 별도 기록한다. 전환 중 서버별 UI 버전이 잠시 다를 수 있으므로 최종적으로 두 존의 jar SHA와 정적 자산 일치를 확인한다. 병렬 서버와 공인 IP는 임시 추가 과금 대상이고, 이전 이미지·LC는 비공개 롤백 자원으로 보존 기간을 정한다.

@@ -26,21 +26,21 @@
 - Worker cutover: do not leave the old worker polling while validating a real job on the replacement.
 
 ### Task 1: Portable SSH and Java runtime
-Files: `infra/network/templates/bastion-init.sh.tftpl`, `infra/runtime/install-runtime.sh`, `infra/runtime/council-flow.service`, `infra/runtime/tests/test_install_runtime.py`.
-- [ ] Add test asserting `/usr/bin/java` is used by the service and installer, and test Java 17 refuses artifact installation. Run `python3 -m unittest discover -s infra/runtime/tests -v`; expect failure before change.
-- [ ] Require Java 21 with `java_version=$(/usr/bin/java -version 2>&1); grep -Eq 'version "21[.]' <<< "$java_version"`; abort before copying artifacts on mismatch.
-- [ ] Change ExecStart to `/usr/bin/java`; keep restart and is-active verification.
-- [ ] Guard `restorecon` with `command -v restorecon`; reload ssh.service if present, otherwise sshd.service; validate `/usr/sbin/sshd -t` first.
-- [ ] Run runtime tests and `bash -n infra/runtime/install-runtime.sh`; commit portability change.
+Files: `infra/network/templates/ubuntu-init.sh.tftpl`, `infra/runtime/install-runtime.sh`, `infra/runtime/council-flow.service`, `infra/runtime/tests/test_install_runtime.py`.
+- [x] Add test asserting `/usr/bin/java` is used by the service and installer, and test Java 17 refuses artifact installation. Run `python3 -m unittest discover -s infra/runtime/tests -v`; expect failure before change.
+- [x] Require Java 21 with `java_version=$(/usr/bin/java -version 2>&1); grep -Eq 'version "21[.]' <<< "$java_version"`; abort before copying artifacts on mismatch.
+- [x] Change ExecStart to `/usr/bin/java`; keep restart and is-active verification.
+- [x] Guard `restorecon` with `command -v restorecon`; reload ssh.service if present, otherwise sshd.service; validate `/usr/sbin/sshd -t` first.
+- [x] Run runtime tests and `bash -n infra/runtime/install-runtime.sh`; commit portability change.
 
 ### Task 2: Parallel Ubuntu infrastructure
 Files: `infra/network/ubuntu.tf`, `infra/network/variables.tf`, `infra/network/outputs.tf`, `docs/infra.md`; local protected migration scripts under outputs.
 Consumes: existing VPC/ACGs/login-key and Task 1 SSH template. Produces: parallel Ubuntu Bastion/Worker/image-builder addresses.
-- [ ] Add opt-in `enable_ubuntu_migration=false`; new hosts use image 104630229 and private addresses 10.30.1.11, 10.30.20.11, 10.30.10.11. Bastion c2-g3, others s2-g3; use existing SSH public key/login key/ACGs.
-- [ ] Validate `terraform fmt -check`, `terraform validate`, existing `terraform test`; inspect saved real plan. Only creation of three NICs, three servers, one init script and one public IP is permitted in this stage.
-- [ ] Back up protected state. Apply reviewed plan; record IDs. Verify `/etc/os-release`, SSH effective config, Java 21 apt installation and DB reachability via SSH.
+- [x] Add opt-in `enable_ubuntu_migration=false`; new hosts use image 104630229 and private addresses 10.30.1.11, 10.30.20.11, 10.30.10.11. Bastion c2-g3, others s2-g3; use existing SSH public key/login key/ACGs.
+- [x] Validate `terraform fmt -check`, `terraform validate`, existing `terraform test`; inspect saved real plan. Only creation of three NICs, three servers, one init script and one public IP is permitted in this stage.
+- [x] Back up protected state. Apply reviewed plan; record IDs. Verify `/etc/os-release`, SSH effective config, Java 21 apt installation and DB reachability via SSH.
 - [ ] Build jar with JDK21 `./mvnw verify`; install reviewed new UI jar on builder, private environment, seed disabled. Verify login/current groups unchanged.
-- [ ] Commit and push branch; share evidence, not keys.
+- [x] Commit and push branch; share evidence, not keys.
 
 ### Task 3: App and Worker cutover
 Consumes: verified builder and jar. Produces: Ubuntu image/LC and live Ubuntu services.
