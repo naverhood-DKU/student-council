@@ -494,3 +494,13 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
 
 /* 카드 안 목록: 줄이 카드 테두리에 붙지 않게 */
 .card.row-list { padding: 4px 16px; }
+
+/* 규정 검수: 조항 원문은 줄바꿈·들여쓰기를 그대로 보여 준다 */
+.clause-text {
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.6;
+  margin: 8px 0;
+}

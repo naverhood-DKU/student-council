@@ -184,6 +184,37 @@ AI 응답을 기다리다 시간이 넘으면(240초) AI가 처리했는지 알 
 
 받은 그룹은 결정 요약과 요청 사항만 보고, 보낸 그룹의 회의록은 볼 수 없습니다. 상위 그룹도 다른 그룹의 회의록을 볼 수 없습니다(서비스 관리자의 읽기 전용 열람만 예외).
 
+## 규정 등록·검수 써 보기 (단계 3 준비)
+
+지출 절차 안내의 근거가 될 회칙·세칙·규정을 올리고 사람이 확인해 확정합니다. 확정한 규정만 이후 지출 검토에서 찾습니다.
+
+1. 회장(`sw`)이 대시보드의 **규정 → 규정 올리기**에서 규정 이름(문서 첫 줄 제목과 같게)·발행 주체와 PDF/TXT 파일(또는 붙여 넣은 글자)을 넣습니다.
+   시행일과 규정 버전은 올릴 때 넣어도 되고, 확정 전까지 넣어도 됩니다.
+2. 서버가 "제n조" 기준으로 나눠 **검수 중**으로 저장합니다. 쪽번호 줄(`- 3 -`)만 걷어내고 본문은 글자 그대로 둡니다.
+   나눈 조각을 이어 붙인 결과가 원문과 다르면 화면 위에 경고가 뜹니다.
+3. 조항을 원문과 대조해 **검수 완료**를 누릅니다. 잘못 나뉘었으면 수정하고, 빠진 조항은 **아래에 조항 추가**로 넣습니다. 글을 고치면 검수 표시가 풀립니다.
+   번호 순서가 거꾸로이거나 삭제된 조문 같은 곳에는 주의 표시가 붙습니다.
+4. 시행일·버전이 있고 모든 조·보칙·부칙이 검수 완료면 **확정**할 수 있습니다. 확정한 규정은 고칠 수 없고, 바뀌면 새로 올린 뒤 옛 규정을 **폐기**합니다.
+
+- 권한: 보기는 그 그룹 구성원, 올리기·고치기·확정은 그 그룹 회장만. 다른 그룹의 규정은 볼 수 없습니다.
+- 원본 파일은 저장하지 않습니다. 추출한 글자와 파일 지문(SHA-256)만 남고, 모든 변경은 변경 기록(AuditLog)에 남습니다.
+- 스캔한 이미지 PDF는 글자를 읽지 못합니다. 슬라이드 같은 안내 자료는 아직 올릴 수 없습니다.
+- PDF 글자 추출은 PDFBox 를 쓰므로 다른 도구(pdftotext 등)와 줄 모양이 조금 다를 수 있습니다. 그래서 확정 전 검수가 필수입니다.
+
+## 지출 절차 확인 써 보기 (단계 3 앞부분)
+
+규정을 확정해 두면, 지출 항목을 적었을 때 관련 조항을 찾아 원문 그대로 보여 줍니다. 이 단계에서는 AI를 쓰지 않습니다(절차 안내문은 다음 단계).
+
+1. 회장(`ce`)이 위에서 규정을 올려 모든 조항을 검수하고 **확정**합니다. 확정하지 않은 규정은 찾지 않습니다.
+2. 대시보드의 **지출 절차 확인**에서 지출 항목(예: `MT 숙박비`)을 적고 **관련 조항 찾기**를 누릅니다. 금액·재원·집행 예정일·찾을 말은 선택입니다.
+   승인된 결정에 지출 언급이 있으면 그 결정 카드의 **지출 절차 확인** 링크로 들어와 값을 미리 채울 수 있습니다.
+3. 결과 화면에 후보 조항(관련도 순, 최대 10개)이 규정 이름·버전·시행일과 함께 나옵니다. 후보는 키워드로 찾은 것이라 실제 적용 여부는 사람이 판단합니다.
+
+- 찾는 범위: 그 그룹이 확정한 규정 중 집행 예정일(비우면 오늘)에 이미 시행 중인 것, 그리고 검수 완료한 조·보칙·부칙.
+- 후보를 못 찾으면 `직접 확인 필요`(NEEDS_CHECK)이고 "문제가 없다는 뜻이 아닙니다"라고 알립니다. "문제없음" 상태는 없습니다.
+- 규정에 쓰인 낱말과 지출 항목이 다르면(예: 항목은 `간식비`, 규정은 `다과`) 못 찾을 수 있습니다. **찾을 말**에 규정 속 낱말을 더하면 됩니다.
+- 요청은 회장과 부장급 직책이 하고, 부원은 결과를 볼 수만 있습니다. 변경 기록(AuditLog)에 남습니다.
+
 ### AI 결과 평가
 
 기준 답안과 AI 결과를 결정·업무 단위로 비교하는 스크립트가 있습니다. 사용법과 지금까지의 결과는 [scripts/eval/README.md](scripts/eval/README.md).
@@ -242,6 +273,20 @@ AI 응답을 기다리다 시간이 넘으면(240초) AI가 처리했는지 알 
 | `PATCH /api/admin/groups/{id}` | 가입 코드 정하기·바꾸기 `{ joinCode }` |
 | `POST /api/admin/groups/{id}/owners` | 회장 계정 주기 `{ loginId, name, initialPassword }` |
 | `DELETE /api/admin/groups/{id}/owners/{userId}` | 회장 자격 거두기 |
+| `POST /api/orgs/{id}/rule-documents` | 규정 올리기(multipart: `title`, `issuer`, `appliesTo?`, `effectiveDate?`, `docVersion?`, `notes?`, `bodyStartLine?`, `file` 또는 `text`)(회장) → 201, 조항으로 나뉜 `DRAFT` |
+| `GET /api/orgs/{id}/rule-documents` | 규정 목록과 검수 진행 상황(구성원) |
+| `GET /api/rule-documents/{id}` | 규정과 조항 전체 |
+| `PATCH /api/rule-documents/{id}` | 발행 주체·시행일·버전·메모 고치기(회장, `If-Match`, 확정 전만) |
+| `POST /api/rule-documents/{id}/clauses` | 조항 직접 추가 `{ afterClauseId?, kind?, label, title?, text }`(회장, 확정 전만) |
+| `POST /api/rule-documents/{id}/clauses/review` | 고른 조항을 검수 완료로 `{ clauseIds }`(회장) |
+| `PATCH /api/clauses/{id}` | 조항 고치기·검수 표시 `{ label?, title?, text?, reviewed? }`(회장, `If-Match`). 글을 고치면 검수 표시가 풀림 |
+| `DELETE /api/clauses/{id}` | 조항 지우기(회장, 확정 전만) → 204 |
+| `POST /api/rule-documents/{id}/confirm` | 확정(회장, `If-Match`). 시행일·버전이 없거나 검수 안 한 조항이 있으면 거절 |
+| `POST /api/rule-documents/{id}/retire` | 확정한 규정 폐기(회장, `If-Match`) |
+| `DELETE /api/rule-documents/{id}` | 확정 전 규정 지우기(회장) → 204 |
+| `POST /api/expense-reviews` | 지출 절차 확인 요청 `{ orgId, decisionId?, item?, amount?, fundSource?, plannedDate?, note?, keywords? }`(회장·부장급) → 201, 후보 조항·알림이 든 결과 |
+| `GET /api/orgs/{id}/expense-reviews` | 지출 검토 목록(구성원) |
+| `GET /api/expense-reviews/{id}` | 지출 검토 결과: 후보 조항 원문, 알림 |
 | `GET /actuator/health` | 상태 확인. 인증 없이 열려 있습니다 |
 
 - `/api/**`는 `Authorization: Bearer <토큰>`이 필요합니다.
@@ -264,6 +309,8 @@ src/main/java/kr/dku/councilflow/
   analysis/  회의 분석: 프롬프트, 형식 검증, 구간 합치기, 의미 검증·저장
   decision/  결정·업무, 승인, 업무보드
   delivery/  그룹 간 업무 요청, 수신함, 결과 제출·검토, 집계
+  rule/      규정 등록, "제n조" 분리(RuleTextSplitter), 조항 검수·확정
+  expense/   지출 절차 확인 요청, 확정된 규정에서 후보 조항 찾기(SearchTerms)
   audit/     변경 기록(AuditLog)
   common/    공통 엔티티, 오류 응답, 요청 ID 필터
   seed/      local 시드 데이터

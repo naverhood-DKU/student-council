@@ -64,8 +64,8 @@ Spring Boot 4는 starter가 모듈로 나뉘어 있다. 의존성을 추가할 �
 | JoinRequest | id, user_id, org_id, status, decided_by, decided_at, reject_reason, version — (user_id, org_id) 고유, 다시 신청하면 같은 줄을 PENDING 으로 |
 | Delivery | id, decision_id, from_org_id, to_org_id, request_type(INFORM/COOPERATE/RESULT_NOTICE), status, due_date, message(요청 사항), internal_department_id(수신 조직 내 담당), clarification_reason/reply, closing_reason, previous_due_date·due_changed_at(기한 변경 표시), created_by, version |
 | Submission | id, delivery_id, result_link, description, submitted_by, review_status(PENDING/APPROVED/REJECTED), reviewed_by, review_comment, reviewed_at — 고치지 않고 새로 제출 |
-| RuleDocument / Clause | doc: title, issuer, applies_to_org_id, effective_date, doc_version(규정 버전), file_key, reviewed_by · clause: doc_id, number, title, text(FULLTEXT ngram 인덱스) |
-| ExpenseReview | id, org_id, item, amount, fund_source, planned_date, status, clause_ids, missing_facts, guidance, reviewed_by |
+| RuleDocument / Clause | doc(`rule_document`): applies_to_org_id(등록해 쓰는 그룹), title, source_type(지금은 REGULATION만), issuer, applies_to, effective_date, doc_version(규정 버전), notes, file_name·source_sha256(원본 PDF는 저장하지 않음, file_key 미사용), source_text(쪽번호만 걷어낸 추출 글자), roundtrip_ok, status(DRAFT/CONFIRMED/RETIRED), reviewed_by·reviewed_at · clause: doc_id, seq, kind(PREAMBLE/CHAPTER/SECTION/ARTICLE/EXTRA/SUPPLEMENTARY), label(예: 제12조; V1의 `number`를 바꾼 이름), article_no·branch_number, title, chapter, section_name, text(FULLTEXT ngram 인덱스 `ft_clause_text`; 조 제목이 본문 첫 줄에 있어 text 만 찾는다), review_status(UNREVIEWED/REVIEWED), edited, flags |
+| ExpenseReview | id, org_id, decision_id(승인된 결정에서 요청했을 때), item, amount, fund_source, planned_date, note, search_text(실제 쓴 검색어), status, clause_ids(후보 조항 id, 관련도 순), missing_facts, guidance, requested_by, reviewed_by |
 | Job | id, type(TRANSCRIBE/ANALYZE/EXPENSE), target_id, status, attempts, locked_until, last_error |
 | AuditLog | id, actor_user_id, org_id, action, target_type, target_id, before_json, after_json, at |
 
@@ -81,7 +81,8 @@ Spring Boot 4는 starter가 모듈로 나뉘어 있다. 의존성을 추가할 �
 | Delivery | PENDING → ACCEPTED / CLARIFICATION_REQUESTED(사유 필수) / NOT_APPLICABLE · CLARIFICATION_REQUESTED → PENDING(발신 답변) / ACCEPTED · ACCEPTED → IN_PROGRESS → SUBMITTED → DONE(확정) / IN_PROGRESS(반려) · 알림(INFORM)은 수락하면 DONE · 끝나지 않은 전달 → CANCELLED(발신) | 수락·확인 요청·해당 없음·담당 지정: 받은 그룹 회장 / 시작·제출: 받은 그룹 회장 + 담당 부서 부장 / 답변·기한·취소·확정·반려: 보낸 그룹 회장 |
 | TaskItem | 완료 체크 done true ⇄ false (상태 전이 없음). 담당 부서가 정해진, 끝나지 않은 승인 업무에서만 | 만들기·내용·맡길 사람·지우기: 회장 또는 담당 부서 부장 / 완료 체크: 맡은 사람 본인 또는 그 사람들 |
 | JoinRequest | PENDING → APPROVED(역할·부서를 정해 승인) / REJECTED(사유 선택) · APPROVED·REJECTED → PENDING(다시 신청) | 신청: 본인 / 승인·거절: 그 그룹 회장 |
-| ExpenseReview | PROCEDURE_FOUND / NEEDS_CHECK / POSSIBLE_CONFLICT → REVIEWED | AI 제안 후 회장(재정부 부장이 어디까지 할지는 단계 4에서 정한다) |
+| RuleDocument | DRAFT → CONFIRMED(시행일·버전 입력 + 모든 조·보칙·부칙이 REVIEWED일 때만) → RETIRED · 확정·폐기한 문서는 고치지 않음 | 그 그룹 회장 |
+| ExpenseReview | (요청) → CANDIDATES_FOUND(확정 규정에서 후보 조항을 찾음) / NEEDS_CHECK(후보 없음·확정 규정 없음) · 이후 AI 안내로 PROCEDURE_FOUND / NEEDS_CHECK / POSSIBLE_CONFLICT → REVIEWED. "문제없음" 상태는 없다 | 요청: 회장·부장급(후보 검색은 AI 없이 서버가 함) / 검토 완료: 회장(재정부 부장이 어디까지 할지는 단계 4에서 정한다) |
 | Job | QUEUED → RUNNING → SUCCEEDED / FAILED / FAILED_UNKNOWN · RUNNING → QUEUED(일시 오류 재시도) · 임대 만료된 RUNNING → RUNNING(다른 Worker가 다시 가져감) | Worker |
 
 - 허용되지 않은 전이는 409. 전이 규칙은 한 곳(상태 enum 또는 전이 표)에 모으고 테스트로 전부 덮는다(`StatusTransitionTest`).
@@ -125,7 +126,20 @@ PATCH  /api/deliveries/{id}                  수락·확인 요청·해당 없�
 POST   /api/deliveries/{id}/submissions      결과 제출
 POST   /api/submissions/{id}/review          보낸 그룹 회장의 완료 확정/반려
 GET    /api/decisions/{id}/delivery-summary  대상별 상태 집계
-POST   /api/expense-reviews                  지출 절차 안내 요청 → { jobId }
+POST   /api/orgs/{id}/rule-documents         규정 올리기(multipart) → "제n조" 분리 결과(DRAFT) (회장)
+GET    /api/orgs/{id}/rule-documents         규정 목록·검수 진행 상황
+GET    /api/rule-documents/{id}              규정과 조항 전체
+PATCH  /api/rule-documents/{id}              발행 주체·시행일·버전·메모 (회장, If-Match, DRAFT만)
+POST   /api/rule-documents/{id}/clauses      조항 직접 추가 (회장, DRAFT만)
+POST   /api/rule-documents/{id}/clauses/review  고른 조항 검수 완료 { clauseIds } (회장)
+PATCH  /api/clauses/{id}                     조항 수정·검수 표시 (회장, If-Match, DRAFT만)
+DELETE /api/clauses/{id}                     조항 삭제 (회장, DRAFT만)
+POST   /api/rule-documents/{id}/confirm      확정 (회장, If-Match)
+POST   /api/rule-documents/{id}/retire       폐기 (회장, If-Match)
+DELETE /api/rule-documents/{id}              확정 전 규정 삭제 (회장)
+POST   /api/expense-reviews                  지출 절차 확인 요청 { orgId, decisionId?, item?, amount?, fundSource?, plannedDate?, note?, keywords? } (회장·부장급) → 후보 조항이 든 결과를 바로 돌려줌. AI 안내(작업 큐 EXPENSE)는 다음 단계에서 붙인다
+GET    /api/orgs/{id}/expense-reviews        지출 검토 목록
+GET    /api/expense-reviews/{id}             후보 조항 원문·알림 포함 결과
 GET    /api/orgs/{id}/members                구성원 목록
 POST   /api/orgs/{id}/members                구성원 초대(회장) { loginId, name, initialPassword, positionId, departmentId }
 PATCH  /api/memberships/{id}                 직책·부서 변경(회장, If-Match) { positionId?, departmentId? }
