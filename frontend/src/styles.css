@@ -620,3 +620,5 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
   .meeting-new-page h2 { font-size: 1.45rem; }
 }
 @media (prefers-reduced-motion: reduce) { .decision-branch { animation: none; } }
+
+.meeting-inspector[hidden], .meeting-inspector [hidden] { display: none !important; }
