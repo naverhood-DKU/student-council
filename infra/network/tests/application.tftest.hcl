@@ -1,6 +1,7 @@
 mock_provider "ncloud" {}
 
 variables {
+  enable_ubuntu_app_groups  = false
   enable_ubuntu_migration   = false
   enable_application        = false
   enable_autoscaling        = false

@@ -172,3 +172,8 @@ import 이후 축소 정책의 cooldown을 provider가 null로 읽었지만 공�
 검증: 새 UI 포함 JDK21 `./mvnw verify` 86/86, frontend test 3/3, runtime test 3/3, Terraform mock 13/13 통과. 이 단계의 실제 Terraform은 병렬 자원 8개 생성 후 ASG 설정 2개 변경만 수행했으며 기존 자원 삭제는 없었다.
 
 아직 공개 URL은 전환 중이며, 최종 Ubuntu App·Worker 검증과 Rocky 자원 정리는 완료 전 별도 기록한다. 전환 중 서버별 UI 버전이 잠시 다를 수 있으므로 최종적으로 두 존의 jar SHA와 정적 자산 일치를 확인한다. 병렬 서버와 공인 IP는 임시 추가 과금 대상이고, 이전 이미지·LC는 비공개 롤백 자원으로 보존 기간을 정한다.
+
+
+전환 방식 보완: 혼합 OS 그룹을 단순 축소하면 검증한 새 서버가 종료될 가능성을 배제하지 못해 자동 승인 검토가 거절했다. 기존 그룹의 임의 축소는 실행하지 않았다. 대신 별도의 Ubuntu 전용 ASG(`council-ubuntu-app-asg-a/b`, prefix `cfub-a/b`)를 두 존에 생성해 새 서버를 검증한 다음, 이전 그룹 전체를 퇴역시키는 블루/그린 방식으로 진행한다. 최종 서버 수와 최소·최대(2~4대)는 동일하다. 전환 중 추가 App 2대는 일시적인 과금 대상이다.
+
+Worker 검증 정정: `application-worker.yml`은 HTTP 서버를 띄우지 않는다. 따라서 `/actuator/health` 대신 systemd active, DB 연결 시작 로그, 기존 Worker inactive, 실제 분석 작업 성공으로 확인한다. Ubuntu Worker에서 가상 회의 5번·분석 작업 5번이 실제 CLOVA API로 SUCCEEDED를 반환했다.

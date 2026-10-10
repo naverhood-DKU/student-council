@@ -1,6 +1,7 @@
 mock_provider "ncloud" {}
 
 variables {
+  enable_ubuntu_app_groups  = false
   enable_ubuntu_migration   = false
   admin_ipv4_cidr           = "198.51.100.10/32"
   enable_management         = true

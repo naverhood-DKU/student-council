@@ -1,6 +1,7 @@
 mock_provider "ncloud" {}
 
 variables {
+  enable_ubuntu_app_groups  = false
   admin_ipv4_cidr           = "198.51.100.10/32"
   enable_management         = true
   enable_application        = true
@@ -34,5 +35,19 @@ run "migration_preserves_legacy_access_and_private_roles" {
   assert {
     condition     = strcontains(ncloud_init_script.ubuntu[0].content, "command -v restorecon") && strcontains(ncloud_init_script.ubuntu[0].content, "reload ssh.service") && strcontains(ncloud_init_script.ubuntu[0].content, "PasswordAuthentication no")
     error_message = "Ubuntu key-only SSH initialization must tolerate absent SELinux and use Ubuntu's SSH unit."
+  }
+}
+
+run "ubuntu_groups_isolate_verified_replacements" {
+  command = apply
+  variables {
+    enable_ubuntu_migration     = true
+    enable_ubuntu_app_groups    = true
+    enable_autoscaling          = true
+    app_launch_configuration_no = "39685"
+  }
+  assert {
+    condition     = length(ncloud_auto_scaling_group.ubuntu_app) == 2 && length(ncloud_auto_scaling_group.app) == 2 && alltrue([for key, group in ncloud_auto_scaling_group.ubuntu_app : group.name == "council-ubuntu-app-asg-${key}" && group.min_size == 1 && group.max_size == 2 && group.launch_configuration_no == "39685" && group.health_check_type_code == "LOADB"])
+    error_message = "New Ubuntu groups must be independent of the legacy groups with one healthy App per zone and bounded scaling."
   }
 }

@@ -101,3 +101,13 @@ variable "enable_ubuntu_migration" {
     error_message = "Ubuntu migration requires existing management and application resources."
   }
 }
+
+variable "enable_ubuntu_app_groups" {
+  description = "Create isolated Ubuntu App groups before retiring previous groups."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_ubuntu_app_groups || (var.enable_autoscaling && var.enable_ubuntu_migration)
+    error_message = "Ubuntu App groups require the prepared migration hosts and launch configuration."
+  }
+}
