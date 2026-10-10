@@ -17,4 +17,6 @@ install -m 644 "$staging/council-flow.service" /etc/systemd/system/council-flow.
 rm -f "$staging/runtime.env"
 systemd-analyze verify /etc/systemd/system/council-flow.service
 systemctl daemon-reload
-systemctl enable --now council-flow.service
+systemctl enable council-flow.service
+systemctl restart council-flow.service
+systemctl is-active --quiet council-flow.service

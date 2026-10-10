@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'infra/network/**'
+      - 'infra/runtime/**'
       - '.github/workflows/infra.yml'
   push:
     branches: [main]
     paths:
       - 'infra/network/**'
+      - 'infra/runtime/**'
       - '.github/workflows/infra.yml'
 
 permissions:
@@ -31,3 +33,4 @@ jobs:
       - run: terraform validate
       # Mock provider only; no NCP keys, real plan or apply in CI.
       - run: terraform test -no-color
+      - run: python3 -m unittest discover -s ../runtime/tests -v

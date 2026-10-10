@@ -151,3 +151,5 @@ KR-1 App 146195839의 서비스를 중지하고 KR-2 App을 유지했다. 2초 �
 import 이후 축소 정책의 cooldown을 provider가 null로 읽었지만 공식 API의 coolDown은 600이었다. 축소 정책에 한해 cooldown drift를 제외하고 생성값 600을 유지했다. 이후 변경 전 두 정책의 실제 coolDown=600을 공식 API로 대조한다. 이 제외는 외부에서 바뀐 쿨다운을 자동 복원하지 못하는 비용이 있다. 정책 ID/방향/min/max는 그대로 Terraform이 관리한다.
 
 최종 검증: 전체 Terraform state 52개, taint 없음, 실제 plan 변경 0개, mock 테스트 11개 통과. 장애 복구 후 공개 로그인·내 계정 조회 200. 비밀 값 변경 파일 검사 0건.
+
+최종 독립 리뷰: 중요한 문제 1건(재배포 시 실행 중 JVM 미갱신)을 enable 후 restart·기동 확인으로 수정했다. 회귀 테스트가 실패 후 통과했으며 CI에도 포함했다.
