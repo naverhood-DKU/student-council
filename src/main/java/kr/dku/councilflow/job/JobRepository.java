@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface JobRepository extends JpaRepository<Job, Long> {
 
@@ -26,6 +28,16 @@ public interface JobRepository extends JpaRepository<Job, Long> {
              FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     Optional<Long> lockNextClaimableId(Instant now);
+
+    /** Renew only a live claim. Keep version unchanged: it identifies the owning attempt. */
+    @Modifying
+    @Transactional
+    @Query(value = """
+            UPDATE job SET locked_until = :until, updated_at = :now
+             WHERE id = :id AND version = :version AND status = 'RUNNING'
+               AND locked_until > :now
+            """, nativeQuery = true)
+    int renewLease(long id, long version, Instant now, Instant until);
 
     Optional<Job> findFirstByTypeAndTargetIdOrderByIdDesc(JobType type, Long targetId);
 

@@ -31,7 +31,7 @@
 | 인증 | 가입 코드로 회원가입 → 그룹 회장 승인(또는 회장·서비스 관리자의 직접 초대) + BCrypt 해시 + 짧은 만료의 서명 JWT, 요청마다 활성 Membership 확인 |
 | 파일 | NCP Object Storage (S3 호환, AWS SDK v2, endpoint `https://kr.object.ncloudstorage.com`, region `kr-standard`), 비공개 버킷 |
 | AI | CLOVA Speech(장문 인식), CLOVA Studio HCX-007 Structured Outputs |
-| 비동기 | 같은 코드베이스를 Spring profile `worker`로 실행. DB `job` 테이블 폴링(`SELECT … FOR UPDATE SKIP LOCKED` + `locked_until` 임대). local 프로필은 App 하나가 폴링까지 한다 |
+| 비동기 | 같은 코드베이스를 Spring profile `worker`로 실행. DB `job` 테이블 폴링(`SELECT … FOR UPDATE SKIP LOCKED` + `locked_until` 임대). 처리 중 별도 heartbeat가 임대 유효시간의 1/3마다 갱신한다. local 프로필은 App 하나가 폴링까지 한다 |
 | 인프라 | Terraform(ncloud provider), `infra/` 폴더 |
 | 테스트 | JUnit 5, Testcontainers MySQL, 외부 API는 테스트 안에서 띄운 가짜 HTTP 서버로 대체(실제 API 호출 금지) |
 | 부하 | k6, `loadtest/` 폴더 |

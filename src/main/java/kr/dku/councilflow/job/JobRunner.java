@@ -30,14 +30,16 @@ public class JobRunner {
     private final TransactionTemplate tx;
     private final WorkerProperties properties;
     private final Clock clock;
+    private final JobLeaseHeartbeat heartbeat;
 
     JobRunner(JobRepository jobs, List<JobHandler<?>> handlers, PlatformTransactionManager transactionManager,
-              WorkerProperties properties, Clock clock) {
+              WorkerProperties properties, Clock clock, JobLeaseHeartbeat heartbeat) {
         this.jobs = jobs;
         handlers.forEach(handler -> this.handlers.put(handler.type(), handler));
         this.tx = new TransactionTemplate(transactionManager);
         this.properties = properties;
         this.clock = clock;
+        this.heartbeat = heartbeat;
     }
 
     /** 가져오기 결과. exhausted 면 시도 횟수를 다 써서 이미 FAILED 로 정리한 작업이다. */
@@ -51,7 +53,9 @@ public class JobRunner {
             return false;
         }
         if (!claim.exhausted()) {
-            process(claim);
+            try (var renewal = heartbeat.start(claim.jobId(), claim.version())) {
+                process(claim);
+            }
         }
         return true;
     }
