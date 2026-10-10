@@ -1,16 +1,30 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { api, type ExpenseReviewStatus, type ExpenseReviewSummary, type ExpenseReviewView } from '../api'
+import {
+  api,
+  type ExpenseChecklistItem,
+  type ExpenseClauseRef,
+  type ExpenseReviewStatus,
+  type ExpenseReviewSummary,
+  type ExpenseReviewView,
+} from '../api'
 import { formatDateTime } from '../labels'
-import { errorMessage, useLoad, useOrg } from '../useOrg'
+import { errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
 import { TopBar } from './TopBar'
 
 export const EXPENSE_STATUS_LABEL: Record<ExpenseReviewStatus, string> = {
   CANDIDATES_FOUND: '후보 조항 있음',
-  NEEDS_CHECK: '직접 확인 필요',
+  NEEDS_CHECK: '확인 필요',
   PROCEDURE_FOUND: '절차 확인',
   POSSIBLE_CONFLICT: '충돌 가능',
   REVIEWED: '검토 완료',
+}
+
+/** 상태 배지 색: 확인 필요·충돌 가능은 눈에 띄게, 검토 완료는 조용하게 */
+function statusChip(status: ExpenseReviewStatus): string {
+  if (status === 'NEEDS_CHECK' || status === 'POSSIBLE_CONFLICT') return 'chip warn'
+  if (status === 'REVIEWED') return 'chip subtle'
+  return 'chip'
 }
 
 function won(amount: number | null) {
@@ -37,6 +51,7 @@ export function ExpensePage() {
         <h2>지출 절차 확인</h2>
         <p className="muted small">
           지출 항목을 적으면 이 그룹이 확정한 규정에서 관련 조항을 찾아 원문과 함께 보여 줍니다.
+          AI 는 후보 조항 안에서만 필요한 승인과 증빙을 정리하며, 조항 원문은 규정에 등록된 글 그대로 보여 줍니다.
           찾은 조항은 후보일 뿐이며 감사를 대체하지 않습니다.
         </p>
         {canRequest && <NewForm orgId={orgId} />}
@@ -55,7 +70,7 @@ export function ExpensePage() {
                       {won(r.amount)} · 후보 조항 {r.candidateCount}개 · {formatDateTime(r.createdAt)}
                     </span>
                   </span>
-                  <span className={r.status === 'CANDIDATES_FOUND' ? 'chip' : 'chip warn'}>{EXPENSE_STATUS_LABEL[r.status]}</span>
+                  <span className={statusChip(r.status)}>{EXPENSE_STATUS_LABEL[r.status]}</span>
                 </Link>
               </li>
             ))}
@@ -141,12 +156,17 @@ function NewForm({ orgId }: { orgId: number }) {
   )
 }
 
-/** 요청 한 건의 결과: 알림, 후보 조항(원문 그대로) */
+/** 요청 한 건의 결과: AI 안내(서버가 조항 원문에서 확인한 것만), 체크리스트, 후보 조항(원문 그대로), 검토 완료 */
 export function ExpenseReviewPage() {
   const orgId = Number(useParams().orgId)
   const reviewId = Number(useParams().reviewId)
-  const [review] = useLoad<ExpenseReviewView>(
+  const [org] = useOrg(orgId)
+  const [review, reload] = useLoad<ExpenseReviewView>(
     () => api.expenseReview(reviewId), [reviewId], '지출 검토를 불러오지 못했습니다.')
+  const readOnly = org.status !== 'ready' || org.data.adminView
+  const canWork = !readOnly && org.status === 'ready' && (org.data.myRole === 'OWNER' || org.data.myRole === 'EDITOR')
+  // 검토 완료는 지금은 회장만. 서버가 같은 규칙으로 막는다.
+  const canComplete = !readOnly && org.status === 'ready' && isOwner(org.data)
 
   return (
     <>
@@ -155,18 +175,80 @@ export function ExpenseReviewPage() {
         <p><Link to={`/orgs/${orgId}/expense`} className="muted small">← 지출 절차 확인</Link></p>
         {review.status === 'loading' && <p className="page-message">불러오는 중…</p>}
         {review.status === 'error' && <p className="error" role="alert">{review.message}</p>}
-        {review.status === 'ready' && <Result review={review.data} orgId={orgId} />}
+        {review.status === 'ready' && (
+          <Result review={review.data} orgId={orgId} canWork={canWork} canComplete={canComplete} reload={reload} />
+        )}
       </main>
     </>
   )
 }
 
-function Result({ review, orgId }: { review: ExpenseReviewView; orgId: number }) {
+interface ResultProps {
+  review: ExpenseReviewView
+  orgId: number
+  canWork: boolean
+  canComplete: boolean
+  reload: () => void
+}
+
+function scrollToClause(clauseId: number) {
+  document.getElementById(`clause-${clauseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+function ClauseLinks({ clauses }: { clauses: ExpenseClauseRef[] }) {
+  return (
+    <span className="chips">
+      {clauses.map((c) => (
+        <button key={c.clauseId} type="button" className="chip subtle" onClick={() => scrollToClause(c.clauseId)}
+                title={`${c.docTitle} ${c.label}로 이동`}>
+          {c.label}
+        </button>
+      ))}
+    </span>
+  )
+}
+
+function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const reviewed = review.status === 'REVIEWED'
+  const jobActive = review.job?.status === 'QUEUED' || review.job?.status === 'RUNNING'
+  const jobFailed = review.job?.status === 'FAILED' || review.job?.status === 'FAILED_UNKNOWN'
+
+  // AI 안내를 만드는 중이면 3초마다 새로 불러온다.
+  useEffect(() => {
+    if (!jobActive) return
+    const timer = window.setInterval(reload, 3000)
+    return () => window.clearInterval(timer)
+  }, [jobActive, reload])
+
+  async function run(action: () => Promise<unknown>, failure: string) {
+    setBusy(true)
+    setError(null)
+    try {
+      await action()
+    } catch (err) {
+      setError(errorMessage(err, failure))
+    } finally {
+      setBusy(false)
+      reload()
+    }
+  }
+
+  const approvals = review.checklist.filter((i) => i.kind === 'APPROVAL')
+  const evidence = review.checklist.filter((i) => i.kind === 'EVIDENCE')
+  const guidance = review.guidance
+  const editable = canWork && !reviewed
+  const canAskAgain = editable && review.candidates.length > 0
+  const canReview = canComplete && !reviewed && guidance !== null && !jobActive
+  const toggle = (item: ExpenseChecklistItem) =>
+    run(() => api.checkExpenseItem(item, !item.checked), '체크를 바꾸지 못했습니다.')
+
   return (
     <>
       <h2>
         {review.item}{' '}
-        <span className={review.status === 'CANDIDATES_FOUND' ? 'chip' : 'chip warn'}>{EXPENSE_STATUS_LABEL[review.status]}</span>
+        <span className={statusChip(review.status)}>{EXPENSE_STATUS_LABEL[review.status]}</span>
       </h2>
       <p className="muted small">
         {won(review.amount)}
@@ -175,7 +257,117 @@ function Result({ review, orgId }: { review: ExpenseReviewView; orgId: number })
         {review.decisionId && ' · 승인된 결정에서 요청'}
       </p>
       {review.note && <p className="card small">{review.note}</p>}
+
+      <p className="card warn-card small" role="note"><strong>{review.disclaimer}</strong></p>
       {review.notices.map((n) => <p key={n} className="error small" role="alert">{n}</p>)}
+      {reviewed && (
+        <p className="card small" role="status">
+          검토 완료{review.reviewedAt && ` (${formatDateTime(review.reviewedAt)})`}: 회장이 AI 안내와 조항 원문을 확인했다는
+          표시입니다. 이 지출이 규정에 맞다는 뜻은 아닙니다.
+          {guidance && ` 확인 당시 AI 안내 결과: ${EXPENSE_STATUS_LABEL[guidance.outcome]}`}
+        </p>
+      )}
+
+      {/* AI 안내 진행·실패. 실패해도 아래 후보 조항은 그대로 보인다. */}
+      {jobActive && (
+        <p className="muted small" role="status">
+          AI 가 후보 조항에서 필요한 승인과 증빙을 정리하는 중입니다… (3초마다 새로 불러옵니다)
+        </p>
+      )}
+      {!jobActive && jobFailed && review.job && (
+        <p className="error small" role="alert">
+          {review.job.status === 'FAILED_UNKNOWN'
+            ? 'AI 서버가 요청을 처리했는지 알 수 없어 자동으로 다시 부르지 않았습니다.'
+            : 'AI 안내를 받지 못했습니다.'}
+          {' '}오류 종류: {review.job.lastError ?? '알 수 없음'}. 후보 조항은 아래에 그대로 있습니다.
+        </p>
+      )}
+      {!jobActive && !guidance && !jobFailed && review.candidates.length > 0 && (
+        <p className="muted small">아직 AI 안내가 없습니다. 아래 후보 조항 원문을 직접 확인해 주세요.</p>
+      )}
+
+      {guidance && (
+        <>
+          <h3>필요한 승인</h3>
+          <Checklist items={approvals} editable={editable} busy={busy} onToggle={toggle}
+                     empty="후보 조항에서 서버가 확인한 필요 승인이 없습니다. 조항 원문을 직접 확인해 주세요." />
+          <h3>필요한 증빙</h3>
+          <Checklist items={evidence} editable={editable} busy={busy} onToggle={toggle}
+                     empty="후보 조항에서 서버가 확인한 필요 증빙이 없습니다. 조항 원문을 직접 확인해 주세요." />
+          {(approvals.length > 0 || evidence.length > 0) && (
+            <p className="muted small">체크 표시는 사람이 확인했다는 기록이며, 회장과 부장급 직책이 바꿀 수 있습니다.</p>
+          )}
+
+          {guidance.conflicts.length > 0 && (
+            <>
+              <h3>충돌 가능성</h3>
+              <p className="muted small">
+                후보 조항끼리 다르게 말하는 부분입니다. 어느 쪽이 맞는지는 AI 가 정하지 않았습니다. 직접 확인해 주세요.
+              </p>
+              <ul className="card-list">
+                {guidance.conflicts.map((c) => (
+                  <li key={c.description} className="card warn-card">
+                    <p>{c.description}</p>
+                    <ClauseLinks clauses={c.clauses} />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {guidance.missingFacts.length > 0 && (
+            <>
+              <h3>더 확인해야 할 사실</h3>
+              <ul className="plain-list">
+                {guidance.missingFacts.map((f) => <li key={f}>{f}</li>)}
+              </ul>
+            </>
+          )}
+
+          {guidance.note && (
+            <>
+              <h3>AI 참고 메모</h3>
+              <p className="card small">{guidance.note}</p>
+              <p className="muted small">조항으로 확인된 내용이 아니라 AI 가 쓴 참고용 글입니다. 판단은 조항 원문으로 해 주세요.</p>
+            </>
+          )}
+
+          {guidance.droppedCount > 0 && (
+            <div className="card small" role="status">
+              <strong>서버 검증에서 {guidance.droppedCount}개 항목을 제외했습니다.</strong>
+              <ul className="plain-list">
+                {guidance.droppedNotes.map((n) => <li key={n}>{n}</li>)}
+              </ul>
+              <span className="muted">조항 원문에서 확인되지 않은 내용은 보여 주지 않습니다. 빠진 내용이 있을 수 있습니다.</span>
+            </div>
+          )}
+        </>
+      )}
+
+      {error && <p className="error" role="alert">{error}</p>}
+      {(canAskAgain || canReview) && (
+        <div className="actions-row">
+          {canAskAgain && (
+            <button type="button" className="ghost" disabled={busy || jobActive}
+                    onClick={() => run(() => api.requestExpenseGuidance(review.id), 'AI 안내를 요청하지 못했습니다.')}>
+              {guidance || jobFailed ? 'AI 안내 다시 받기' : 'AI 안내 받기'}
+            </button>
+          )}
+          {canReview && (
+            <button type="button" className="primary inline" disabled={busy}
+                    onClick={() => run(() => api.completeExpenseReview(review), '검토 완료를 표시하지 못했습니다.')}>
+              검토 완료
+            </button>
+          )}
+        </div>
+      )}
+      {canReview && (
+        <p className="muted small">
+          검토 완료는 AI 안내와 아래 조항 원문을 사람이 확인했다는 표시입니다. 규정에 맞다는 판정이 아니며,
+          표시한 뒤에는 체크리스트를 바꾸거나 AI 안내를 다시 받을 수 없습니다.
+        </p>
+      )}
+      {!canWork && !reviewed && <p className="muted small">이 화면에서는 결과를 보는 것만 할 수 있습니다.</p>}
 
       {review.candidates.length > 0 && (
         <>
@@ -187,7 +379,7 @@ function Result({ review, orgId }: { review: ExpenseReviewView; orgId: number })
       )}
       <ul className="card-list">
         {review.candidates.map((c) => (
-          <li key={c.clauseId} className="card">
+          <li key={c.clauseId} id={`clause-${c.clauseId}`} className="card">
             <div className="card-head">
               <strong>{c.label}{c.title ? ` (${c.title})` : ''}</strong>
               <span className="chips">
@@ -205,5 +397,32 @@ function Result({ review, orgId }: { review: ExpenseReviewView; orgId: number })
       </ul>
       {review.searchText && <p className="muted small">찾는 데 쓴 말: {review.searchText}</p>}
     </>
+  )
+}
+
+function Checklist({ items, editable, busy, empty, onToggle }: {
+  items: ExpenseChecklistItem[]
+  editable: boolean
+  busy: boolean
+  empty: string
+  onToggle: (item: ExpenseChecklistItem) => void
+}) {
+  if (items.length === 0) return <p className="muted small">{empty}</p>
+  return (
+    <ul className="card-list">
+      {items.map((item) => (
+        <li key={item.id} className="card">
+          <label className="check-row">
+            <input type="checkbox" checked={item.checked} disabled={!editable || busy} onChange={() => onToggle(item)} />
+            <span><strong>{item.text}</strong></span>
+          </label>
+          <blockquote className="quote">
+            <span className="muted small">원문에서 확인된 구절</span>
+            <span className="block">{item.quote}</span>
+          </blockquote>
+          <ClauseLinks clauses={item.clauses} />
+        </li>
+      ))}
+    </ul>
   )
 }

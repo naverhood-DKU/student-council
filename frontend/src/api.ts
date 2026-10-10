@@ -510,6 +510,43 @@ export interface ExpenseCandidate {
   docStatus: RuleDocStatus
 }
 
+/** 근거 조항으로 연결하기 위한 짧은 참조(조항 원문은 candidates 에서 읽는다) */
+export interface ExpenseClauseRef {
+  clauseId: number
+  label: string
+  docTitle: string
+}
+
+/** 필요한 승인(APPROVAL) 또는 필요한 증빙(EVIDENCE). 서버가 인용 구절을 조항 원문에서 확인한 것만 온다. */
+export interface ExpenseChecklistItem {
+  id: number
+  kind: 'APPROVAL' | 'EVIDENCE'
+  text: string
+  clauses: ExpenseClauseRef[]
+  /** 근거 조항 원문에서 확인된 인용 구절 */
+  quote: string
+  checked: boolean
+  checkedAt: string | null
+  version: number
+}
+
+export interface ExpenseConflict {
+  description: string
+  clauses: ExpenseClauseRef[]
+}
+
+/** 서버 검증을 통과한 AI 안내. note 는 조항으로 확인된 내용이 아니라 참고용이다. */
+export interface ExpenseGuidance {
+  outcome: 'PROCEDURE_FOUND' | 'POSSIBLE_CONFLICT' | 'NEEDS_CHECK'
+  conflicts: ExpenseConflict[]
+  missingFacts: string[]
+  note: string | null
+  /** 서버 검증에서 걸러낸 항목 수 */
+  droppedCount: number
+  droppedNotes: string[]
+  generatedAt: string
+}
+
 export interface ExpenseReviewView {
   id: number
   orgId: number
@@ -524,6 +561,14 @@ export interface ExpenseReviewView {
   candidates: ExpenseCandidate[]
   /** 결과를 읽을 때 놓치면 안 되는 점 */
   notices: string[]
+  /** AI 안내를 아직 못 받았거나 실패했으면 null */
+  guidance: ExpenseGuidance | null
+  checklist: ExpenseChecklistItem[]
+  /** 가장 최근 AI 안내 작업(없으면 null). status 와 lastError 로 진행·실패를 보여 준다. */
+  job: Job | null
+  /** 서버가 항상 붙이는 고정 안내문 */
+  disclaimer: string
+  reviewedAt: string | null
   createdAt: string
   version: number
 }
@@ -677,4 +722,11 @@ export const api = {
   expenseReviews: (orgId: number) => request<ExpenseReviewSummary[]>('GET', `/api/orgs/${orgId}/expense-reviews`),
   expenseReview: (reviewId: number) => request<ExpenseReviewView>('GET', `/api/expense-reviews/${reviewId}`),
   createExpenseReview: (input: ExpenseReviewInput) => request<ExpenseReviewView>('POST', '/api/expense-reviews', input),
+  /** AI 안내 다시 받기. 이미 대기·진행 중이면 그 작업이 돌아온다. */
+  requestExpenseGuidance: (reviewId: number) => request<Job>('POST', `/api/expense-reviews/${reviewId}/guidance`),
+  /** 검토 완료(회장). "규정에 맞다"는 뜻이 아니라 안내와 조항 원문을 확인했다는 표시다. */
+  completeExpenseReview: (review: { id: number; version: number }) =>
+    request<ExpenseReviewView>('POST', `/api/expense-reviews/${review.id}/review`, undefined, review.version),
+  checkExpenseItem: (item: { id: number; version: number }, checked: boolean) =>
+    request<ExpenseChecklistItem>('PATCH', `/api/expense-review-items/${item.id}`, { checked }, item.version),
 }
