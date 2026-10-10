@@ -42,7 +42,42 @@ public final class ExpenseGuidanceValidator {
     /** status 는 POSSIBLY_RESTRICTED / POSSIBLE_CONFLICT / PROCEDURE_FOUND / NEEDS_CHECK 중 하나다. */
     public record Validated(ExpenseReviewStatus status, List<Item> approvals, List<Item> evidence,
                             List<GuidanceResult.Restriction> restrictions, List<GuidanceResult.Conflict> conflicts,
-                            List<String> missingFacts, String guidance, int droppedCount, List<String> droppedNotes) {
+                            List<String> missingFacts, String guidance, int droppedCount, List<String> droppedNotes,
+                            List<GuidanceResult.SetAside> setAside) {
+
+        public Validated(ExpenseReviewStatus status, List<Item> approvals, List<Item> evidence,
+                         List<GuidanceResult.Restriction> restrictions, List<GuidanceResult.Conflict> conflicts,
+                         List<String> missingFacts, String guidance, int droppedCount, List<String> droppedNotes) {
+            this(status, approvals, evidence, restrictions, conflicts, missingFacts, guidance, droppedCount,
+                    droppedNotes, List.of());
+        }
+
+        /** 알림 한 줄을 덧붙인 사본 */
+        public Validated withNote(String note) {
+            List<String> notes = new ArrayList<>(droppedNotes);
+            notes.add(note);
+            return new Validated(status, approvals, evidence, restrictions, conflicts, missingFacts, guidance,
+                    droppedCount, notes, setAside);
+        }
+    }
+
+    /** 남은 것으로 결과 종류를 정한다. 우선순위: 관련 있는 금지 > 충돌 > 승인·증빙·한도 > 확인 필요 */
+    static ExpenseReviewStatus statusOf(List<Item> approvals, List<Item> evidence,
+                                        List<GuidanceResult.Restriction> restrictions,
+                                        List<GuidanceResult.Conflict> conflicts) {
+        // 배지는 이 지출과 직접 관련 있어 보이는 금지에만 쓴다. 관련 없어 보이는 금지는 지우지 않고 따로 보여 준다.
+        boolean prohibited = restrictions.stream()
+                .anyMatch(r -> r.relatedOrTrue() && GuidanceResult.PROHIBITED.equals(r.kind()));
+        if (prohibited) {
+            return ExpenseReviewStatus.POSSIBLY_RESTRICTED;
+        }
+        if (!conflicts.isEmpty()) {
+            return ExpenseReviewStatus.POSSIBLE_CONFLICT;
+        }
+        if (!approvals.isEmpty() || !evidence.isEmpty() || !restrictions.isEmpty()) {
+            return ExpenseReviewStatus.PROCEDURE_FOUND;
+        }
+        return ExpenseReviewStatus.NEEDS_CHECK;
     }
 
     private enum Reason {
@@ -105,19 +140,7 @@ public final class ExpenseGuidanceValidator {
             }
         }
 
-        // 배지는 이 지출과 직접 관련 있어 보이는 금지에만 쓴다. 관련 없어 보이는 금지는 지우지 않고 따로 보여 준다.
-        boolean prohibited = restrictions.stream()
-                .anyMatch(r -> r.relatedOrTrue() && GuidanceResult.PROHIBITED.equals(r.kind()));
-        ExpenseReviewStatus status;
-        if (prohibited) {
-            status = ExpenseReviewStatus.POSSIBLY_RESTRICTED;
-        } else if (!conflicts.isEmpty()) {
-            status = ExpenseReviewStatus.POSSIBLE_CONFLICT;
-        } else if (!approvals.isEmpty() || !evidence.isEmpty() || !restrictions.isEmpty()) {
-            status = ExpenseReviewStatus.PROCEDURE_FOUND;
-        } else {
-            status = ExpenseReviewStatus.NEEDS_CHECK;
-        }
+        ExpenseReviewStatus status = statusOf(approvals, evidence, restrictions, conflicts);
 
         String guidance = parsed.guidance();
         if (guidance.isBlank()) {
@@ -144,7 +167,8 @@ public final class ExpenseGuidanceValidator {
             notes.add("승인·증빙으로 분류됐지만 인용 구절이 금지·제한을 말하는 항목 " + moved[0]
                     + "개를 금지·제한으로 옮겼습니다.");
         }
-        return new Validated(status, approvals, evidence, restrictions, conflicts, missing, guidance, total, notes);
+        return new Validated(status, approvals, evidence, restrictions, conflicts, missing, guidance, total, notes,
+                List.of());
     }
 
     private static List<GuidanceResult.Restriction> restrictions(List<ParsedGuidance.Restriction> parsed,

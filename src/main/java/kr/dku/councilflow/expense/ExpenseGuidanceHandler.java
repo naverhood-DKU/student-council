@@ -38,8 +38,12 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
     record Result(ExpenseGuidanceValidator.Validated validated) {
     }
 
-    /** 모델에 보낼 메시지와, 금지 항목의 관련성을 가릴 지출 항목 글 */
-    private record Prepared(ExpenseGuidancePrompt.Built built, String subject) {
+    /**
+     * 모델에 보낼 메시지, 금지 항목의 관련성을 가릴 지출 항목 글(subject), 적용 재확인에 쓸 지출 정보와 조항 글.
+     */
+    private record Prepared(ExpenseGuidancePrompt.Built built, String subject,
+                            ExpenseGuidancePrompt.Subject facts,
+                            Map<Long, ExpenseApplicabilityChecker.ClauseText> clauseTexts) {
     }
 
     private final ExpenseReviewRepository reviews;
@@ -48,20 +52,22 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
     private final RuleDocumentRepository docs;
     private final ExpenseGuidancePrompt prompt;
     private final ExpenseGuidanceAnalyzer analyzer;
+    private final ExpenseApplicabilityChecker applicability;
     private final AuditService audit;
     private final Clock clock;
     private final TransactionTemplate readOnly;
 
     ExpenseGuidanceHandler(ExpenseReviewRepository reviews, ExpenseChecklistItemRepository items,
                            ClauseRepository clauses, RuleDocumentRepository docs, ExpenseGuidancePrompt prompt,
-                           ExpenseGuidanceAnalyzer analyzer, AuditService audit, Clock clock,
-                           PlatformTransactionManager transactionManager) {
+                           ExpenseGuidanceAnalyzer analyzer, ExpenseApplicabilityChecker applicability,
+                           AuditService audit, Clock clock, PlatformTransactionManager transactionManager) {
         this.reviews = reviews;
         this.items = items;
         this.clauses = clauses;
         this.docs = docs;
         this.prompt = prompt;
         this.analyzer = analyzer;
+        this.applicability = applicability;
         this.audit = audit;
         this.clock = clock;
         this.readOnly = new TransactionTemplate(transactionManager);
@@ -77,7 +83,26 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
     public Result execute(long reviewId) {
         Prepared prepared = readOnly.execute(status -> build(reviewId));
         ParsedGuidance parsed = analyzer.analyze(prepared.built().messages());
-        return new Result(ExpenseGuidanceValidator.validate(parsed, prepared.built().candidates(), prepared.subject()));
+        ExpenseGuidanceValidator.Validated validated =
+                ExpenseGuidanceValidator.validate(parsed, prepared.built().candidates(), prepared.subject());
+        return new Result(recheck(validated, prepared));
+    }
+
+    /**
+     * 남은 항목이 이 지출에 실제로 해당하는지 한 번 더 묻는다. 이 호출이 실패해도 작업은 실패하지 않는다.
+     * 첫 결과는 이미 서버 검증을 통과했으므로 재확인을 못 했다고만 알린다.
+     */
+    private ExpenseGuidanceValidator.Validated recheck(ExpenseGuidanceValidator.Validated validated, Prepared prepared) {
+        List<ExpenseApplicability.Target> targets = ExpenseApplicability.targets(validated);
+        if (!applicability.enabled() || targets.isEmpty()) {
+            return validated;
+        }
+        Map<String, ExpenseApplicability.Verdict> verdicts =
+                applicability.check(prepared.facts(), targets, prepared.clauseTexts());
+        if (verdicts == null) {
+            return validated.withNote("각 항목이 이 지출에 해당하는지 AI로 다시 확인하지 못했습니다. 조항 원문과 비교해 직접 확인해 주세요.");
+        }
+        return ExpenseApplicability.apply(validated, verdicts);
     }
 
     @Override
@@ -120,7 +145,7 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
         items.saveAll(created);
 
         GuidanceResult stored = new GuidanceResult(v.status().name(), v.conflicts(), v.restrictions(),
-                v.droppedCount(), v.droppedNotes(), clock.instant().toString());
+                v.droppedCount(), v.droppedNotes(), clock.instant().toString(), v.setAside());
         review.applyGuidance(v.status(), stored, v.missingFacts(), v.guidance());
 
         Map<String, Object> after = new LinkedHashMap<>();
@@ -129,6 +154,7 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
         after.put("evidence", v.evidence().size());
         after.put("conflicts", v.conflicts().size());
         after.put("restrictions", v.restrictions().size());
+        after.put("setAside", v.setAside().size());
         after.put("dropped", v.droppedCount());
         audit.record(null, review.getOrgId(), "EXPENSE_GUIDANCE_GENERATED", "EXPENSE_REVIEW", reviewId, null, after);
     }
@@ -166,7 +192,17 @@ class ExpenseGuidanceHandler implements JobHandler<ExpenseGuidanceHandler.Result
                 review.getFundSource(), review.getPlannedDate(), review.getNote(), LocalDate.now(clock.withZone(SEOUL)));
         // 금지·제한이 이 지출과 직접 관련 있는지 가릴 때는 후보를 찾는 데 실제로 쓴 말(항목·설명·찾을 말)을 쓴다.
         String relatedSubject = review.getSearchText() != null ? review.getSearchText() : review.getItem();
-        return new Prepared(prompt.build(subject, inputs), relatedSubject);
+        ExpenseGuidancePrompt.Built built = prompt.build(subject, inputs, relatedSubject);
+        Map<Long, ExpenseApplicabilityChecker.ClauseText> texts = new HashMap<>();
+        Map<Long, String> labelById = new HashMap<>();
+        for (ExpenseGuidancePrompt.ClauseInput input : inputs) {
+            labelById.put(input.clauseId(), input.docTitle() + " " + input.label());
+        }
+        for (ExpenseGuidanceValidator.Candidate candidate : built.candidates()) {
+            texts.put(candidate.clauseId(), new ExpenseApplicabilityChecker.ClauseText(
+                    labelById.get(candidate.clauseId()), candidate.sentText()));
+        }
+        return new Prepared(built, relatedSubject, subject, texts);
     }
 
     private static String key(ChecklistKind kind, String text) {

@@ -512,6 +512,8 @@ export interface ExpenseCandidate {
   docStatus: RuleDocStatus
   /** 이 조항 글에 금지·제한 표현이 있다(서버의 낱말 검사) */
   mentionsRestriction: boolean
+  /** 조항 원문에서 지출 항목과 글자가 겹치는 문단(원문을 자른 것). 말이 달라 겹치지 않으면 비어 있다 */
+  matchedParagraphs: string[]
 }
 
 /** 근거 조항으로 연결하기 위한 짧은 참조(조항 원문은 candidates 에서 읽는다) */
@@ -546,6 +548,15 @@ export interface ExpenseChecklistItem {
   version: number
 }
 
+/** AI 재확인에서 이 지출에 해당하지 않거나 인용과 맞지 않는다고 본 승인·증빙. 체크리스트 밖에 따로 보인다. */
+export interface ExpenseSetAside {
+  kind: 'APPROVAL' | 'EVIDENCE'
+  text: string
+  clauses: ExpenseClauseRef[]
+  quote: string
+  reason: 'NOT_APPLICABLE' | 'QUOTE_MISMATCH'
+}
+
 export interface ExpenseConflict {
   description: string
   clauses: ExpenseClauseRef[]
@@ -556,6 +567,7 @@ export interface ExpenseGuidance {
   outcome: 'PROCEDURE_FOUND' | 'POSSIBLE_CONFLICT' | 'POSSIBLY_RESTRICTED' | 'NEEDS_CHECK'
   restrictions: ExpenseRestriction[]
   conflicts: ExpenseConflict[]
+  setAside: ExpenseSetAside[]
   missingFacts: string[]
   note: string | null
   /** 서버 검증에서 걸러낸 항목 수 */

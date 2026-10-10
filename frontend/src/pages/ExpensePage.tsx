@@ -343,6 +343,33 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
           <h3>필요한 증빙</h3>
           <Checklist items={evidence} editable={editable} busy={busy} onToggle={toggle}
                      empty="후보 조항에서 서버가 확인한 필요 증빙이 없습니다. 조항 원문을 직접 확인해 주세요." />
+          {guidance.setAside.length > 0 && (
+            <details className="card small">
+              <summary>이 지출에 해당하지 않아 보여 체크리스트에서 뺀 승인·증빙 {guidance.setAside.length}개 (참고)</summary>
+              <p className="muted small">
+                AI 가 한 번 더 확인했을 때 이 지출과 대상이 다르거나 인용 구절과 문구가 맞지 않는다고 본 항목입니다.
+                지우지 않았으니 실제로 해당하는지는 조항 원문으로 확인해 주세요.
+              </p>
+              <ul className="card-list">
+                {guidance.setAside.map((s) => (
+                  <li key={`${s.kind}-${s.text}`} className="card">
+                    <p>
+                      <span className="chip">{s.kind === 'APPROVAL' ? '승인' : '증빙'}</span>{' '}
+                      <strong>{s.text}</strong>{' '}
+                      <span className="muted small">
+                        {s.reason === 'NOT_APPLICABLE' ? '이 지출에 해당하지 않아 보임' : '인용 구절과 문구가 맞지 않아 보임'}
+                      </span>
+                    </p>
+                    <blockquote className="expense-quote">
+                      <span className="muted small">원문에서 확인된 구절</span>
+                      <span className="block">{s.quote}</span>
+                    </blockquote>
+                    <ClauseLinks clauses={s.clauses} />
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           {(approvals.length > 0 || evidence.length > 0) && (
             <p className="muted small">
               항목 문구는 AI 가 정리한 글이고, 아래 인용 구절만 규정 원문에서 확인된 것입니다. 문구와 인용의 뜻이 맞는지 직접 확인해 주세요.
@@ -447,6 +474,12 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
             <p className="muted small">
               {c.docVersion && `버전 ${c.docVersion}`}{c.docEffectiveDate && ` · 시행 ${c.docEffectiveDate}`}
             </p>
+            {c.matchedParagraphs.length > 0 && (
+              <div className="expense-match">
+                <span className="muted small">이 지출 항목과 글자가 겹치는 문단 (원문에서 그대로 잘라 옴)</span>
+                {c.matchedParagraphs.map((p) => <pre key={p} className="clause-text">{p}</pre>)}
+              </div>
+            )}
             <pre className="clause-text">{c.text}</pre>
             <Link to={`/orgs/${orgId}/rules/${c.docId}`} className="muted small">규정 전체 보기</Link>
           </li>

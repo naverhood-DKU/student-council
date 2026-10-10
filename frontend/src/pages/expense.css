@@ -24,3 +24,5 @@
 }
 .expense-list { margin: 4px 0 8px; padding-left: 20px; display: grid; gap: 2px; }
 button.chip.expense-link { cursor: pointer; font: inherit; font-size: 0.8125rem; }
+
+.expense-match { border-left: 3px solid var(--warn, #c77700); padding-left: 10px; margin: 8px 0; }

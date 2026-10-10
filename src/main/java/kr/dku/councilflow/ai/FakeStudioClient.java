@@ -20,6 +20,8 @@ public class FakeStudioClient implements StudioClient {
     private static final Pattern SEGMENT_ID = Pattern.compile("\\[(S\\d+)]");
     /** 지출 안내 프롬프트의 첫 후보: "[C1] 규정 이름 …" 줄 다음 줄이 조항 원문의 첫 줄이다. */
     private static final Pattern FIRST_CLAUSE = Pattern.compile("(?m)^\\[C1] .*\\R(.+)$");
+    /** 적용 재확인 프롬프트의 항목 이름: 줄 앞의 "[A1] …", "[E2] …", "[R1] …" */
+    private static final Pattern ITEM_NAME = Pattern.compile("(?m)^\\[([AER]\\d+)] ");
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     @Override
@@ -29,6 +31,9 @@ public class FakeStudioClient implements StudioClient {
                 .reduce((first, second) -> second)
                 .map(Message::content)
                 .orElse("");
+        if (lastUser.contains("<항목>") && lastUser.contains("<지출정보>")) {
+            return new StudioReply(applicability(lastUser), "stop");
+        }
         if (lastUser.contains("<지출정보>")) {
             return new StudioReply(expenseGuidance(lastUser), "stop");
         }
@@ -48,6 +53,20 @@ public class FakeStudioClient implements StudioClient {
                 }]}]}
                 """.formatted(first, last);
         return new StudioReply(content, "stop");
+    }
+
+    /** 적용 재확인: 모든 항목이 해당한다고 답한다(실제 판단이 아니다). */
+    private static String applicability(String prompt) {
+        List<Object> verdicts = new ArrayList<>();
+        Matcher matcher = ITEM_NAME.matcher(prompt);
+        while (matcher.find()) {
+            Map<String, Object> verdict = new LinkedHashMap<>();
+            verdict.put("id", matcher.group(1));
+            verdict.put("applies", "YES");
+            verdict.put("quote_supports", "YES");
+            verdicts.add(verdict);
+        }
+        return JSON.writeValueAsString(Map.of("verdicts", verdicts));
     }
 
     private static String expenseGuidance(String prompt) {

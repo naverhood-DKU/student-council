@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "description": "확인할 항목마다 하나씩",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "항목 이름. 예: A1" },
+          "applies": { "type": "string", "enum": ["YES", "NO", "UNSURE"], "description": "그 조항이 이 지출에 해당하는가" },
+          "quote_supports": { "type": "string", "enum": ["YES", "NO", "UNSURE"], "description": "항목 문구가 인용 구절의 내용과 맞는가" }
+        },
+        "required": ["id", "applies", "quote_supports"]
+      }
+    }
+  },
+  "required": ["verdicts"]
+}

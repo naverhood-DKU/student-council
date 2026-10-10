@@ -85,9 +85,13 @@ public class ExpenseReviewService {
                                 LocalDate plannedDate, String note, String keywords) {
     }
 
+    /**
+     * matchedParagraphs 는 조항 원문에서 지출 항목과 글자가 겹치는 문단(원문을 자른 것, 최대 3개)이다.
+     * 모델이 긴 조항의 특정 문단을 놓쳐도 사람이 바로 볼 수 있게 한다. 말이 달라 글자가 겹치지 않으면 비어 있다.
+     */
     public record CandidateView(long clauseId, int rank, String label, String title, String text, long docId,
                                 String docTitle, String docVersion, LocalDate docEffectiveDate, RuleDocStatus docStatus,
-                                boolean mentionsRestriction) {
+                                boolean mentionsRestriction, List<String> matchedParagraphs) {
     }
 
     /**
@@ -109,10 +113,14 @@ public class ExpenseReviewService {
     public record ConflictView(String description, List<ClauseRef> clauses) {
     }
 
+    /** AI 재확인에서 이 지출에 해당하지 않거나 인용과 맞지 않는다고 본 승인(APPROVAL)·증빙(EVIDENCE). 체크리스트 밖에 따로 보인다. */
+    public record SetAsideView(String kind, String text, List<ClauseRef> clauses, String quote, String reason) {
+    }
+
     /** 서버 검증을 통과한 AI 안내. note 는 조항으로 확인된 내용이 아니라 참고용이다. */
     public record GuidanceView(String outcome, List<RestrictionView> restrictions, List<ConflictView> conflicts,
-                               List<String> missingFacts, String note, int droppedCount, List<String> droppedNotes,
-                               String generatedAt) {
+                               List<SetAsideView> setAside, List<String> missingFacts, String note, int droppedCount,
+                               List<String> droppedNotes, String generatedAt) {
     }
 
     public record ReviewView(long id, long orgId, Long decisionId, String item, Long amount, String fundSource,
@@ -328,7 +336,9 @@ public class ExpenseReviewService {
             }
             boolean restrictive = RestrictionWords.mentionsRestriction(c.getText());
             candidates.add(new CandidateView(c.getId(), ++rank, c.getLabel(), c.getTitle(), c.getText(), d.getId(),
-                    d.getTitle(), d.getDocVersion(), d.getEffectiveDate(), d.getStatus(), restrictive));
+                    d.getTitle(), d.getDocVersion(), d.getEffectiveDate(), d.getStatus(), restrictive,
+                    ClauseParagraphs.overlapping(c.getText(),
+                            review.getSearchText() != null ? review.getSearchText() : review.getItem())));
             refs.put(c.getId(), new ClauseRef(c.getId(), c.getLabel(), d.getTitle(), restrictive));
         }
 
@@ -341,7 +351,10 @@ public class ExpenseReviewService {
             List<RestrictionView> restrictions = ai.restrictionsOrEmpty().stream()
                     .map(r -> new RestrictionView(r.kind(), r.text(), refsOf(r.clauseIds(), refs), r.quote(), r.relatedOrTrue()))
                     .toList();
-            guidance = new GuidanceView(ai.outcome(), restrictions, conflicts, review.getMissingFacts(),
+            List<SetAsideView> setAside = ai.setAsideOrEmpty().stream()
+                    .map(s -> new SetAsideView(s.kind(), s.text(), refsOf(s.clauseIds(), refs), s.quote(), s.reason()))
+                    .toList();
+            guidance = new GuidanceView(ai.outcome(), restrictions, conflicts, setAside, review.getMissingFacts(),
                     review.getGuidance(), ai.droppedCount(),
                     ai.droppedNotes() == null ? List.of() : ai.droppedNotes(), ai.generatedAt());
         }

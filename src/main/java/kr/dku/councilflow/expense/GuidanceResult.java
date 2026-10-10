@@ -12,12 +12,23 @@ import kr.dku.councilflow.common.JsonColumns;
  *
  * @param outcome       사람이 검토 완료를 누르기 전의 결과 종류
  * @param restrictions  사용을 금지·제한하는 조항 내용
+ * @param setAside      AI 재확인에서 이 지출에 해당하지 않거나 인용과 맞지 않는다고 본 승인·증빙(지우지 않고 따로 보여 줌)
  * @param droppedCount  검증에서 걸러낸 항목 수
  * @param droppedNotes  걸러내거나 서버가 조정한 이유 요약(모델이 쓴 글은 넣지 않는다)
  * @param generatedAt   ISO-8601 시각
  */
 public record GuidanceResult(String outcome, List<Conflict> conflicts, List<Restriction> restrictions,
-                             int droppedCount, List<String> droppedNotes, String generatedAt) {
+                             int droppedCount, List<String> droppedNotes, String generatedAt,
+                             List<SetAside> setAside) {
+
+    public static final String NOT_APPLICABLE = "NOT_APPLICABLE";
+    public static final String QUOTE_MISMATCH = "QUOTE_MISMATCH";
+
+    /** 예전 저장 값 호환용: setAside 가 없다. */
+    public GuidanceResult(String outcome, List<Conflict> conflicts, List<Restriction> restrictions,
+                          int droppedCount, List<String> droppedNotes, String generatedAt) {
+        this(outcome, conflicts, restrictions, droppedCount, droppedNotes, generatedAt, null);
+    }
 
     public static final String PROHIBITED = "PROHIBITED";
     public static final String LIMITED = "LIMITED";
@@ -39,6 +50,17 @@ public record GuidanceResult(String outcome, List<Conflict> conflicts, List<Rest
         public boolean relatedOrTrue() {
             return !Boolean.FALSE.equals(related);
         }
+    }
+
+    /**
+     * 승인(APPROVAL)·증빙(EVIDENCE) 항목 중 AI 재확인이 "이 지출에 해당하지 않음"(NOT_APPLICABLE) 또는
+     * "인용 구절과 문구가 맞지 않음"(QUOTE_MISMATCH)이라고 본 것. 체크리스트에는 넣지 않고 따로 보여 준다.
+     */
+    public record SetAside(String kind, String text, List<Long> clauseIds, String quote, String reason) {
+    }
+
+    public List<SetAside> setAsideOrEmpty() {
+        return setAside == null ? List.of() : setAside;
     }
 
     public List<Restriction> restrictionsOrEmpty() {
