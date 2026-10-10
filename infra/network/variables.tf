@@ -91,3 +91,13 @@ variable "app_launch_configuration_no" {
     error_message = "Provide the prepared G3 launch configuration number before enabling Auto Scaling."
   }
 }
+
+variable "enable_ubuntu_migration" {
+  description = "Provision parallel Ubuntu hosts; preserve existing deployment until cutover."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_ubuntu_migration || (var.enable_management && var.enable_application)
+    error_message = "Ubuntu migration requires existing management and application resources."
+  }
+}
