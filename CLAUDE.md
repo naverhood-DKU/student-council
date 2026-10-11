@@ -47,6 +47,9 @@ Spring Boot 4는 starter가 모듈로 나뉘어 있다. 의존성을 추가할 �
   - 같은 상위 폴더의 `clova-assembly-test/`에 HCX-007 Structured Outputs 호출 코드(`responseFormat: {type: "json", schema}`, `thinking: {effort: "none"}`)가 있으면 참고한다.
 - 외부 호출은 모두 인터페이스(`SpeechClient`, `StudioClient`, `ObjectStorage`) 뒤에 둔다. 구현체는 실제/가짜 두 개. profile `fake-ai`면 고정 응답을 돌려준다(부하 실험·데모 예비용).
 - 타임아웃·재시도: 연결/응답 타임아웃을 명시한다. JSON 깨짐은 정확히 1번 재요청. 공급자가 처리했는지 불명확한 실패(타임아웃 후 응답 없음)는 즉시 반복 호출하지 않고 `FAILED_UNKNOWN`으로 남긴다.
+- CLOVA 호출 제한은 MySQL `studio_quota`의 공유 예산으로 제어한다. 동일 메인 계정·모델·이용 목적은 같은 `app.clova.quota.scope`를 사용한다. v3 토큰 계산기에서 입력·스키마를 계산하고 최대 출력과 여유 토큰까지 예약한다. 기본 한도 60회/60,000토큰에 90% 예산을 사용한다. 서비스 키로 바꾸면 응답 헤더의 실제 한도를 확인하고 설정한다.
+- 호출 한도 대기는 일반 실패 3회 예산을 소모하지 않는다. 429에서는 공급자 reset/Retry-After에 따른 공유 냉각 후 같은 구간을 재개한다. 대기에는 상한이 있으며 타임아웃·영구 오류를 단순 대기 안내로 숨기지 않는다.
+- 호출 대기 중에는 `job.quota_wait_until`을 표시하고 소유권 version을 조건으로 임대를 갱신한다. 이 임대·진행 필드 갱신은 version을 올리지 않으며, 최종 결과 저장은 기존 version 소유권 검사를 유지한다. 대기는 DB 트랜잭션 밖에서 한다.
 
 ## 도메인 모델
 

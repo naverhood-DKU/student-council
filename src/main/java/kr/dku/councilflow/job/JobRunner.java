@@ -79,6 +79,7 @@ public class JobRunner {
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void process(Claim claim) {
         MDC.put("jobId", String.valueOf(claim.jobId()));
+        MDC.put("jobVersion", String.valueOf(claim.version()));
         long startedAt = System.nanoTime();
         JobHandler handler = handler(claim.type());
         String outcome;
@@ -96,6 +97,7 @@ public class JobRunner {
         long tookMs = (System.nanoTime() - startedAt) / 1_000_000;
         log.info("job type={} attempt finished outcome={} took={}ms", claim.type(), outcome, tookMs);
         MDC.remove("jobId");
+        MDC.remove("jobVersion");
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

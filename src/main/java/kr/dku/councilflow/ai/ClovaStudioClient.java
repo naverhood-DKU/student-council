@@ -31,10 +31,16 @@ public class ClovaStudioClient implements StudioClient {
     private final StudioProperties properties;
     private final ObjectMapper json;
     private final HttpClient http;
+    private final StudioQuota quota;
 
     public ClovaStudioClient(StudioProperties properties, ObjectMapper json) {
+        this(properties,json,null);
+    }
+
+    public ClovaStudioClient(StudioProperties properties,ObjectMapper json,StudioQuota quota) {
         this.properties = properties;
         this.json = json;
+        this.quota = quota;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
                 .build();
@@ -59,17 +65,16 @@ public class ClovaStudioClient implements StudioClient {
         body.put("topK", 0);
         body.put("repetitionPenalty", 1.0);
 
-        HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(properties.baseUrl() + "/v3/chat-completions/" + properties.model()))
-                .timeout(properties.readTimeout())
-                .header("Authorization", "Bearer " + apiKey)
-                .header("X-NCP-CLOVASTUDIO-REQUEST-ID", UUID.randomUUID().toString())
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body)))
-                .build();
-
-        HttpResponse<String> response = send(httpRequest);
+        int reservedTokens=quota==null?0:countTokens(body)+properties.maxCompletionTokens()+128;
+        HttpResponse<String> response;
+        long deadline=System.nanoTime()+java.time.Duration.ofMinutes(30).toNanos();
+        while(true) {
+            if(quota!=null) quota.await(reservedTokens);
+            response=send(request("/v3/chat-completions/"+properties.model(),body));
+            if(quota!=null) quota.feedback(response.headers(),response.statusCode()==429);
+            if(response.statusCode()!=429 || quota==null) break;
+            if(System.nanoTime()>deadline) throw new StudioException(Kind.PERMANENT,"AI_QUOTA_WAIT_TIMEOUT");
+        }
         int status = response.statusCode();
         if (status == 429 || status >= 500) {
             throw new StudioException(Kind.RETRYABLE, "AI_HTTP_" + status);
@@ -91,6 +96,52 @@ public class ClovaStudioClient implements StudioClient {
             throw new StudioException(Kind.PERMANENT, "AI_EMPTY_CONTENT");
         }
         return new StudioReply(content, result.path("finishReason").asString(null));
+    }
+
+    private HttpRequest request(String path,Map<String,Object> body) {
+        return HttpRequest.newBuilder()
+                .uri(URI.create(properties.baseUrl() + path))
+                .timeout(properties.readTimeout())
+                .header("Authorization", "Bearer " + properties.apiKey())
+                .header("X-NCP-CLOVASTUDIO-REQUEST-ID", UUID.randomUUID().toString())
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body)))
+                .build();
+
+    }
+
+    /** 공식 v3 계산기는 messages와 responseFormat을 함께 계산한다. 원문·응답은 로그에 남기지 않는다. */
+    private int countTokens(Map<String,Object> body) {
+        Map<String,Object> countBody=Map.of("messages",body.get("messages"),"responseFormat",body.get("responseFormat"));
+        long deadline=System.nanoTime()+java.time.Duration.ofMinutes(30).toNanos();
+        while(true) {
+            quota.await(0);
+            HttpResponse<String> response=send(request("/v3/api-tools/chat-tokenize/"+properties.model(),countBody));
+            if(response.statusCode()==429) {
+                quota.feedback(response.headers(),true);
+                if(System.nanoTime()>deadline) throw new StudioException(Kind.PERMANENT,"AI_QUOTA_WAIT_TIMEOUT");
+                continue;
+            }
+            if(response.statusCode()>=500) throw new StudioException(Kind.RETRYABLE,"AI_TOKENIZER_UNAVAILABLE");
+            JsonNode root;
+            try {root=json.readTree(response.body());}
+            catch(JacksonException e) {throw new StudioException(Kind.RETRYABLE,"AI_TOKENIZER_BAD_BODY");}
+            if(response.statusCode()!=200 || !"20000".equals(root.path("status").path("code").asString("")))
+                throw new StudioException(Kind.PERMANENT,"AI_TOKENIZER_REJECTED");
+            int count=sumCounts(root.path("result"));
+            if(count<=0) throw new StudioException(Kind.PERMANENT,"AI_TOKEN_COUNT_INVALID");
+            return count;
+        }
+    }
+
+    private static int sumCounts(JsonNode node) {
+        if(node.isObject()) {
+            int count=node.path("count").asInt(0);
+            for(JsonNode child:node) if(child.isObject() || child.isArray()) count+=sumCounts(child);
+            return count;
+        }
+        int count=0;if(node.isArray()) for(JsonNode child:node) count+=sumCounts(child);return count;
     }
 
     private HttpResponse<String> send(HttpRequest request) {

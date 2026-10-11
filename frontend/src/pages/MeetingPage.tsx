@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { api, type Job, type MeetingDetail, type OrgDetail } from '../api'
-import { formatDateTime, JOB_STATUS_LABEL, jobErrorText, MEETING_STATUS_LABEL } from '../labels'
+import { formatDateTime, jobErrorText, MEETING_STATUS_LABEL } from '../labels'
 import { errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
 import { ReviewPanel } from './ReviewPanel'
 import { TopBar } from './TopBar'
+import { jobNotice } from '../jobNotice'
 
 const POLL_MS = 2000
 
@@ -83,17 +84,17 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
 
       <ol className="meeting-progress" aria-label="회의 분석 진행 단계">
         <li className="complete"><span>01</span><strong>회의록 등록</strong><small>원문 준비 완료</small></li>
-        <li className={meeting.status === 'ANALYZED' ? 'complete' : working ? 'current' : ''}><span>02</span><strong>결정·업무 연결</strong><small>{working ? 'AI가 분석 중' : meeting.status === 'ANALYZED' ? '분석 완료' : '분석 대기'}</small></li>
+        <li className={meeting.status === 'ANALYZED' ? 'complete' : working ? 'current' : ''}><span>02</span><strong>결정·업무 연결</strong><small>{working ? job?.status === 'QUEUED' || job?.quotaWaitUntil ? '분석 대기 중' : 'AI가 분석 중' : meeting.status === 'ANALYZED' ? '분석 완료' : '분석 대기'}</small></li>
         <li className={reviewComplete ? 'complete' : meeting.status === 'ANALYZED' ? 'current' : ''}><span>03</span><strong>검토 후 업무 확정</strong><small>{reviewComplete ? '검토 완료 · 업무보드 연결' : '근거 확인 · 승인'}</small></li>
       </ol>
       {working && job && (
         <div className="card notice-card" role="status">
           <span className="spinner" aria-hidden="true" />
           <div>
-            <strong>AI가 결정사항과 부서별 업무를 연결하고 있습니다… ({JOB_STATUS_LABEL[job.status]})</strong>
+            <strong>{jobNotice(job).title}</strong>
             <p className="muted small">
-              보통 몇십 초 걸립니다. 이 화면을 닫아도 분석은 계속됩니다.
-              {job.lastError && ` 일시 오류로 다시 시도하는 중입니다(${job.attempts}/3회).`}
+              {jobNotice(job).body}
+              {job.lastError && !job.quotaWaitUntil && ` 일시 오류로 다시 시도하는 중입니다(${job.attempts}/3회).`}
             </p>
           </div>
         </div>
