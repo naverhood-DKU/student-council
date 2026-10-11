@@ -69,3 +69,18 @@ run "retirement_preserves_data_and_ubuntu_management" {
     error_message = "Retire only replaced legacy compute; preserve Ubuntu access, managed DB, LB and login key."
   }
 }
+
+run "capacity_limit_is_configurable_without_reducing_zone_minimums" {
+  command = apply
+  variables {
+    enable_ubuntu_migration     = true
+    enable_ubuntu_app_groups    = true
+    enable_autoscaling          = true
+    app_launch_configuration_no = "39685"
+    ubuntu_app_max_size_by_zone = { a = 2, b = 1 }
+  }
+  assert {
+    condition     = ncloud_auto_scaling_group.ubuntu_app["a"].max_size == 2 && ncloud_auto_scaling_group.ubuntu_app["b"].max_size == 1 && alltrue([for group in ncloud_auto_scaling_group.ubuntu_app : group.min_size == 1 && group.desired_capacity == 1])
+    error_message = "A measured total limit of three must preserve one baseline App in each zone."
+  }
+}

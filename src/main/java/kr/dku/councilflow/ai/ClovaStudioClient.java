@@ -27,6 +27,7 @@ import tools.jackson.databind.ObjectMapper;
  *   - HCX-007 은 maxTokens 대신 maxCompletionTokens
  */
 public class ClovaStudioClient implements StudioClient {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(ClovaStudioClient.class);
 
     private final StudioProperties properties;
     private final ObjectMapper json;
@@ -146,7 +147,11 @@ public class ClovaStudioClient implements StudioClient {
 
     private HttpResponse<String> send(HttpRequest request) {
         try {
-            return http.send(request, HttpResponse.BodyHandlers.ofString());
+            long started=System.nanoTime();
+            HttpResponse<String> response=http.send(request, HttpResponse.BodyHandlers.ofString());
+            String phase=request.uri().getPath().contains("chat-tokenize")?"tokenizer":"chat";
+            log.info("studio http phase={} status={} took_ms={}",phase,response.statusCode(),java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));
+            return response;
         } catch (HttpConnectTimeoutException | ConnectException e) {
             // 연결 자체가 안 됨: 요청이 공급자에게 닿지 않았다.
             throw new StudioException(Kind.RETRYABLE, "AI_CONNECT_FAILED");

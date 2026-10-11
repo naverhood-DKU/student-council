@@ -50,14 +50,17 @@ public class StudioQuota {
     public void await(int tokens) {
         Instant deadline=clock.instant().plus(properties.maxWait());
         Instant announced=null;
+        long waitedNanos=0;
         while(true) {
             Instant now=clock.instant();Instant until=reserve(tokens,now);
-            if(until==null) {leaseAndNotice(null);return;}
+            if(until==null) {leaseAndNotice(null);log.info("studio quota reserved tokens={} waited_ms={}",tokens,java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(waitedNanos));return;}
             if(!now.isBefore(deadline)) throw new StudioException(StudioException.Kind.PERMANENT,"AI_QUOTA_WAIT_TIMEOUT");
             leaseAndNotice(until);
             if(!until.equals(announced)) {log.info("studio quota wait tokens={} until={}",tokens,until);announced=until;}
+            long sleepStarted=System.nanoTime();
             try {Thread.sleep(Math.max(1,Math.min(1000,Duration.between(now,until).toMillis())));}
             catch(InterruptedException e) {Thread.currentThread().interrupt();throw new StudioException(StudioException.Kind.UNKNOWN_OUTCOME,"AI_INTERRUPTED");}
+            finally {waitedNanos+=System.nanoTime()-sleepStarted;}
         }
     }
 
@@ -70,8 +73,10 @@ public class StudioQuota {
     /** 429는 공유 냉각을 적용한다. 성공 시에도 다른 경로에서 소비된 잔량을 보수적으로 반영한다. */
     public void feedback(HttpHeaders headers,boolean limited) {
         Instant now=clock.instant();long reset=Math.max(seconds(headers,"x-ratelimit-reset-requests",0),seconds(headers,"x-ratelimit-reset-tokens",0));
-        if(limited) {long seconds=Math.max(61,Math.max(reset+1,seconds(headers,"retry-after",0)));cooldown(now.plusSeconds(seconds));log.warn("studio quota cooldown limited=true seconds={}",seconds);return;}
         long requests=number(headers,"x-ratelimit-remaining-requests",-1),tokens=number(headers,"x-ratelimit-remaining-tokens",-1);
+        if(requests>=0 || tokens>=0) log.info("studio quota feedback limit_requests={} limit_tokens={} remaining_requests={} remaining_tokens={} reset_sec={} limited={}",
+                number(headers,"x-ratelimit-limit-requests",-1),number(headers,"x-ratelimit-limit-tokens",-1),requests,tokens,reset,limited);
+        if(limited) {long seconds=Math.max(61,Math.max(reset+1,seconds(headers,"retry-after",0)));cooldown(now.plusSeconds(seconds));log.warn("studio quota cooldown limited=true seconds={}",seconds);return;}
         if(requests<0 && tokens<0) return;
         tx.executeWithoutResult(status->{initialize(now);State s=locked();
             Instant until=reset>0 && now.plusSeconds(reset+1).isAfter(s.until())?now.plusSeconds(reset+1):s.until();

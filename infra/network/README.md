@@ -65,7 +65,7 @@ NAT 기본 false라도 실제 apply는 네트워크 자원을 만든다. NAT 활
 
 `enable_application=true`는 유료 서비스 자원을 추가하며 `enable_management`, `enable_nat`, 생성한 DB 비밀번호와 고유 버킷 이름이 필요하다. G3 DB 스토리지는 기본 CB2를 사용한다. provider 4.0.5가 G3의 스토리지 응답 필드를 null로 읽으므로 타입을 명시하지 않는다. 공식 API가 ‘추후 적용’으로 표시한 DB 저장 암호화 옵션은 실제 false였으며 적용됐다고 주장하지 않는다.
 
-`enable_autoscaling=true`는 두 존에 각각 min1/max2 App ASG와 증감 정책을 추가한다. provider 4.0.5가 G3 Launch Configuration의 `serverImageNo`/`serverSpecCode`를 지원하지 않으므로 공식 API로 준비한 번호를 `app_launch_configuration_no`에 설정한다. 이 자원과 이미지·스냅샷은 별도 수명 관리가 필요하다. 정책을 정의하는 것과 Cloud Insight CPU 이벤트를 연결하는 것은 별개이며 공식 API로 현재 Ubuntu CPU 이벤트 11911~11914을 연결하고 재조회했다. 재현 요청과 자원 번호는 docs/infra.md에 있다. 부하에 따른 실제 증감은 후속 실험이다.
+`enable_autoscaling=true`는 두 존에 각각 최소 App 1대와 증감 정책을 추가한다. Ubuntu 그룹 상한은 `ubuntu_app_max_size_by_zone`로 지정한다(초기 기본값 a=2/b=2). 정상 처리와 한 대 장애 시험으로 필요한 총 상한을 정하고 존별로 배분한다. 상한은 자동 증설 시점과 다르므로 CPU 정책 동작도 따로 검증한다. provider 4.0.5가 G3 Launch Configuration의 `serverImageNo`/`serverSpecCode`를 지원하지 않으므로 공식 API로 준비한 번호를 `app_launch_configuration_no`에 설정한다. 이 자원과 이미지·스냅샷은 별도 수명 관리가 필요하다. 정책을 정의하는 것과 Cloud Insight CPU 이벤트를 연결하는 것은 별개이며 공식 API로 현재 Ubuntu CPU 이벤트 11911~11914을 연결하고 재조회했다. 재현 요청과 자원 번호는 docs/infra.md에 있다.
 
 jar 실행 설정은 `infra/runtime/`에 있다. 환경변수 파일은 root 0600으로 배포하며 App은 `prod`, Worker는 `prod,worker`를 사용한다. CLOVA 키는 Worker에만 두고 같은 JWT를 두 App에 사용한다. 가상 시드는 이미지 준비 서버에서 강한 비밀번호로 한 번만 생성하고, 이미지 제작 전에 시드를 비활성화한다. 현재 Ubuntu Java 실행은 `/usr/bin/java`를 사용하며 설치 전에 Java 21 여부를 확인한다.
 

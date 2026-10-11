@@ -66,4 +66,32 @@ class ClovaQuotaFlowTest extends IntegrationTest {
             assertThat(org.assertj.core.api.Assertions.catchThrowable(()->result.get(5,java.util.concurrent.TimeUnit.SECONDS))).hasCauseInstanceOf(StudioException.class);
         }
     }
+    @Test void 분석_시간을_한도대기와_외부호출로_구분하고_비밀이나_원문을_로그에_남기지_않는다() throws Exception {
+        var appender=new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();appender.list=new java.util.concurrent.CopyOnWriteArrayList<>();appender.start();
+        var quotaLogger=(ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger(StudioQuota.class);
+        var clientLogger=(ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger(ClovaStudioClient.class);
+        quotaLogger.addAppender(appender);clientLogger.addAppender(appender);
+        try {
+            MutableClock clock=new MutableClock();StudioQuota quota=gate(clock);quota.reserve(50_000,clock.now);
+            CLOVA.enqueue(new FakeClovaServer.Reply(200,"{\"status\":{\"code\":\"20000\"},\"result\":{\"count\":100}}",0),FakeClovaServer.ok("{\"agendas\":[]}"));
+            var client=new ClovaStudioClient(new StudioProperties(CLOVA.url(),"private-test-key", "HCX-007",Duration.ofSeconds(1),Duration.ofSeconds(2),8192,0.2),JSON,quota);
+            try(var pool=Executors.newSingleThreadExecutor()) {
+                var result=pool.submit(()->client.chat(new StudioClient.StudioRequest(List.of(StudioClient.Message.user("private-test-transcript")),JSON.readTree("{\"type\":\"object\"}"))));
+                long deadline=System.nanoTime()+Duration.ofSeconds(5).toNanos();
+                while(appender.list.stream().noneMatch(e->e.getFormattedMessage().contains("studio quota wait tokens=")) && System.nanoTime()<deadline)Thread.sleep(20);
+                clock.now=clock.now.plusSeconds(70);
+                assertThat(result.get(5,java.util.concurrent.TimeUnit.SECONDS).content()).isEqualTo("{\"agendas\":[]}");
+            }
+            quota.feedback(java.net.http.HttpHeaders.of(java.util.Map.of(
+                    "x-ratelimit-limit-requests",List.of("60"),"x-ratelimit-limit-tokens",List.of("60000"),
+                    "x-ratelimit-remaining-requests",List.of("59"),"x-ratelimit-remaining-tokens",List.of("58000"),
+                    "x-ratelimit-reset-tokens",List.of("60.1s")),(name,value)->true),false);
+            var messages=appender.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+            assertThat(messages).anyMatch(x->x.matches("studio http phase=tokenizer status=200 took_ms=[0-9]+"));
+            assertThat(messages).anyMatch(x->x.matches("studio http phase=chat status=200 took_ms=[0-9]+"));
+            assertThat(messages).anyMatch(x->x.matches("studio quota reserved tokens=8420 waited_ms=[1-9][0-9]*"));
+            assertThat(messages).contains("studio quota feedback limit_requests=60 limit_tokens=60000 remaining_requests=59 remaining_tokens=58000 reset_sec=61 limited=false");
+            assertThat(String.join("\n",messages)).doesNotContain("private-test-key","private-test-transcript");
+        } finally {quotaLogger.detachAppender(appender);clientLogger.detachAppender(appender);appender.stop();}
+    }
 }

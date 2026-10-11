@@ -112,6 +112,16 @@ variable "enable_ubuntu_app_groups" {
   }
 }
 
+variable "ubuntu_app_max_size_by_zone" {
+  description = "Ubuntu App ASG limits per zone. Set from capacity and single-App failure measurements; retain one minimum App per zone."
+  type        = map(number)
+  default     = { a = 2, b = 2 }
+  validation {
+    condition     = toset(keys(var.ubuntu_app_max_size_by_zone)) == toset(["a", "b"]) && alltrue([for limit in values(var.ubuntu_app_max_size_by_zone) : limit >= 1 && limit <= 30 && limit == floor(limit)])
+    error_message = "Provide integer limits from 1 to 30 for exactly zones a and b; each zone must retain its minimum App."
+  }
+}
+
 variable "enable_legacy_compute" {
   description = "Retain Rocky Bastion and bootstrap compute until Ubuntu cutover is verified."
   type        = bool

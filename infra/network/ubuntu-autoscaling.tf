@@ -7,7 +7,7 @@ resource "ncloud_auto_scaling_group" "ubuntu_app" {
   access_control_group_no_list = [ncloud_access_control_group.council["app"].id]
   launch_configuration_no      = var.app_launch_configuration_no
   min_size                     = 1
-  max_size                     = 2
+  max_size                     = var.ubuntu_app_max_size_by_zone[each.key]
   desired_capacity             = 1
   default_cooldown             = 300
   health_check_type_code       = "LOADB"
