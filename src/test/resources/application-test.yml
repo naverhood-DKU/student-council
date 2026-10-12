@@ -11,6 +11,8 @@ app:
     enabled: false
     retry-delay: 0s
   clova:
+    quota:
+      enabled: false
     studio:
       api-key: test-key
       read-timeout: 1s

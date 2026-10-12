@@ -1,5 +1,5 @@
 locals {
-  bootstrap_servers = var.enable_application ? {
+  bootstrap_servers = var.enable_application && var.enable_legacy_compute ? {
     app    = { subnet = "app_a", ip = "10.30.10.10", acg = "app", name = "council-app-image" }
     worker = { subnet = "worker_a", ip = "10.30.20.10", acg = "worker", name = "council-worker-a" }
   } : {}
@@ -8,7 +8,7 @@ locals {
 # This init script contains a PUBLIC SSH key only. App/AI credentials are
 # installed through the authenticated management connection after provisioning.
 resource "ncloud_init_script" "compute" {
-  count   = var.enable_application ? 1 : 0
+  count   = var.enable_application && var.enable_legacy_compute ? 1 : 0
   name    = "council-compute-init"
   os_type = "LNX"
   content = templatefile("${path.module}/templates/bastion-init.sh.tftpl", {

@@ -1,5 +1,57 @@
 # NCP 자원 관리표 — 강대운(팀원 3)
 
+## 현재 운영 상태 · 2026-10-10
+
+공개 URL: http://council-lb-146192510-bdc992b32e90.kr.lb.naverncp.com
+
+개선한 회의록 → 결정 → 부서 업무 UI를 Ubuntu App 두 대에 배포했다. App은 웹 화면과 API를 함께 제공하고 Worker는 AI 분석을 처리한다. 실제 CLOVA Studio 분석·근거 검토·승인·업무 요청 수락·결과 제출·완료 집계를 검증했다. Speech 녹음 전사는 미구현이며 화면에 준비 중으로 표시한다.
+
+### 서버 이름과 역할
+
+| 현재 서버 이름 | 존 | ID / 내부 IP | 역할·상태 |
+|---|---|---|---|
+| council-prod-bastion-kr1 | KR-1 | 146197393 / 10.30.1.11 | 관리 접속 통로, 실행 중; 공인 IP 223.130.143.82 |
+| council-prod-app-kr1-01 | KR-1 | 146197897 / 10.30.10.8 | 웹·API, 실행 중 |
+| council-prod-app-kr2-01 | KR-2 | 146197891 / 10.30.110.7 | 웹·API, 실행 중 |
+| council-prod-worker-kr1 | KR-1 | 146197397 / 10.30.20.11 | AI 분석, 실행 중; HTTP 서버 없음 |
+| council-build-app-kr1 | KR-1 | 146197391 / 10.30.10.11 | 이미지 제작, 정지; 부팅 디스크는 과금 유지 |
+
+모두 Ubuntu 24.04.1 LTS다. App·Worker는 Java 21.0.11 및 같은 jar를 사용한다. App SHA-256: `7309f9fd428bde2f49e10a6f618687d62f5be9110d72380ba03e01f4cc252ea0`. Bastion은 c2-g3, 나머지는 s2-g3다. SSH는 관리 IP /32와 공개키만 허용한다. 표시 이름을 변경했으며 OS hostname은 변경하지 않았다.
+
+ASG 접두사는 NCP의 7자 제한 때문에 `app-kr1`, `app-kr2`를 사용한다. 새 서버는 해당 접두사 뒤에 자동 문자열이 붙으며 현재 두 서버의 표시 이름은 위 표와 같다. ASG 그룹명은 `council-ubuntu-app-asg-a/b`를 유지한다.
+
+### 유지한 데이터·네트워크와 확장 구성
+
+| 자원 | 현재 ID / 구성 |
+|---|---|
+| VPC | 150172, 10.30.0.0/16, KR-1·KR-2, 서브넷 11개 |
+| Application LB / Target Group | 146192510 / 6406188, HTTP 80 → App 8080 |
+| Cloud DB for MySQL HA | 서비스 146192517, Master 146192533 / Standby 146192538 |
+| DB 내부 주소 | db-4bde4l.vpc-cdb.ntruss.com, 3306; App·Worker ACG만 접근 |
+| Object Storage | council-recordings-150172, 비공개 |
+| ASG KR-1 / KR-2 | 109054 / 109055, 각 최소 1·최대 2, 총 2~4대 |
+| Ubuntu 이미지 / 스냅샷 / LC | 146197588 / 146197564 / 39685 |
+| CPU 이벤트 | 11911·11912(KR-1), 11913·11914(KR-2), 11915(Bastion·Worker) |
+| 증설 / 축소 정책 | KR-1 37877 / 37875, KR-2 37876 / 37874 |
+
+CPU 80% 초과 3분에 +1(쿨다운 300초), 30% 미만 10분에 -1(600초). 초기 정책이며 부하로 산정한 처리 한계가 아니다. 두 App과 Worker의 실제 CPU 시계열 및 정책 연결을 조회했다. provider 4.0.5의 축소 정책 ID 오기록을 실제 API와 대조하여 import로 정정했고 cooldown Read 누락은 실제 600초 조회로 확인한다.
+
+### 배포·검증·남은 한계
+
+- 최종 이름 정리 후 실제 Terraform plan 변경 0개, validate 성공.
+- 공개 브라우저에서 결정·부서 분기, 원문 근거, 모바일 390px 가로 넘침 없음 및 검토창 초안 유지 확인.
+- 앱 전체 테스트 86개, frontend 3개, runtime 3개, Terraform mock 15개 통과.
+- Ubuntu Worker 실제 작업 5 SUCCEEDED. 공개 API에서 근거 원문 일치, 승인·업무 요청 DONE, 미인증 401·다른 그룹 403·버전 충돌 409 확인.
+- 새 두 존 App을 검증한 후 이전 ASG를 퇴역시켰다. 이전 관리·Worker·builder·ASG 관련 Terraform 자원 15개 삭제 완료. DB·LB·네트워크·비공개 버킷 유지.
+- 이전 Rocky 스냅샷 146195761·이미지 146195776·LC 39683은 비공개 롤백 자원으로 남아 있다. 새 builder의 정지 디스크와 이미지·스냅샷도 청구 점검 대상이다.
+- 현재 HTTP 및 sslMode=PREFERRED는 사용자가 승인한 가상 데이터 데모 구성이다. HTTPS·DB 암호화 완료로 표현하지 않는다. 실데이터 운영 전 보완한다.
+- Worker는 1대이며 임대 갱신 변경은 미배포다. CPU 증설 부하·Ubuntu 장애 복구·DB failover·존 전체 장애는 별도 검증이 필요하다.
+- 발표 마감 2026-10-16 이후 유지/삭제 여부를 팀과 확정한다. 자동 삭제는 설정하지 않았다. 상태 파일·키는 Git 제외, 0600이며 원격 state·잠금은 미구현이다.
+
+아래는 전환 과정의 원래 기록이다. 옛 서버 ID·정책·상태·복구시간은 현재 Ubuntu 환경의 운영 목록이나 성능 측정값이 아니다.
+
+## 전환 전 이력 (Rocky; 현재 자원 목록 아님)
+
 ## 현재 상태 · 2026-10-10
 
 VPC·11개 서브넷·존별 NAT·Bastion에 더해 G3 Private App 이미지 준비 서버 1대, Worker 1대, 두 존 Cloud DB for MySQL HA, 두 존 Application LB, 비공개 Object Storage 버킷을 생성했다. 공개 LB 주소에서 로그인·실제 CLOVA 분석·근거 검토·승인·업무보드·그룹 요청 수락·제출·완료 집계를 검증했다. ASG는 KR-1·KR-2 각 최소 1대, 최대 2대이며 초기 App은 총 2대다.
@@ -153,3 +205,32 @@ import 이후 축소 정책의 cooldown을 provider가 null로 읽었지만 공�
 최종 검증: 전체 Terraform state 52개, taint 없음, 실제 plan 변경 0개, mock 테스트 11개 통과. 장애 복구 후 공개 로그인·내 계정 조회 200. 비밀 값 변경 파일 검사 0건.
 
 최종 독립 리뷰: 중요한 문제 1건(재배포 시 실행 중 JVM 미갱신)을 enable 후 restart·기동 확인으로 수정했다. 회귀 테스트가 실패 후 통과했으며 CI에도 포함했다.
+
+
+## Ubuntu 전환 진행 (2026-10-10)
+
+수업 환경과 맞추기 위해 self-managed 서버를 Ubuntu 24.04 LTS로 전환한다. 관리형 MySQL은 기존 서비스와 데이터를 유지한다. 기존 Rocky 서버는 새 관리 경로와 서비스 검증이 끝날 때까지 유지한다.
+
+| 준비 자원 | ID / 주소 | 확인 상태 |
+|---|---|---|
+| Ubuntu Bastion | 146197393 / 10.30.1.11 / 223.130.143.82 | Ubuntu 24.04.1, root·비밀번호 SSH 차단, 공개키 접속 확인 |
+| Ubuntu 이미지 준비 서버 | 146197391 / 10.30.10.11 | Java 21.0.11, 개선 UI jar 설치, DB 포함 health UP; 스냅샷 후 정지 |
+| Ubuntu Worker | 146197397 / 10.30.20.11 | Java 21.0.11, jar·설정 staging 준비; 아직 폴링 시작 안 함 |
+| Ubuntu App 스냅샷 / 이미지 | 146197564 / 146197588 | 비공개, 부팅 가능, CREAT |
+| Ubuntu Launch Configuration | 39685 | s2-g3, init script 1314015; ASG 109051·109052 생성 설정 갱신 완료 |
+
+신규 서버에는 `apt-get install openjdk-21-jre-headless`로 Java 21을 설치한다. 런타임은 배포판별 JDK 디렉터리 대신 `/usr/bin/java`를 사용하며, 설치 스크립트가 Java 21인지 확인한 후 jar·환경설정을 교체한다. service 재시작과 is-active를 확인한다.
+
+검증: 새 UI 포함 JDK21 `./mvnw verify` 86/86, frontend test 3/3, runtime test 3/3, Terraform mock 13/13 통과. 이 단계의 실제 Terraform은 병렬 자원 8개 생성 후 ASG 설정 2개 변경만 수행했으며 기존 자원 삭제는 없었다.
+
+아직 공개 URL은 전환 중이며, 최종 Ubuntu App·Worker 검증과 Rocky 자원 정리는 완료 전 별도 기록한다. 전환 중 서버별 UI 버전이 잠시 다를 수 있으므로 최종적으로 두 존의 jar SHA와 정적 자산 일치를 확인한다. 병렬 서버와 공인 IP는 임시 추가 과금 대상이고, 이전 이미지·LC는 비공개 롤백 자원으로 보존 기간을 정한다.
+
+
+전환 방식 보완: 혼합 OS 그룹을 단순 축소하면 검증한 새 서버가 종료될 가능성을 배제하지 못해 자동 승인 검토가 거절했다. 기존 그룹의 임의 축소는 실행하지 않았다. 대신 별도의 Ubuntu 전용 ASG(`council-ubuntu-app-asg-a/b`, prefix `cfub-a/b`)를 두 존에 생성해 새 서버를 검증한 다음, 이전 그룹 전체를 퇴역시키는 블루/그린 방식으로 진행한다. 최종 서버 수와 최소·최대(2~4대)는 동일하다. 전환 중 추가 App 2대는 일시적인 과금 대상이다.
+
+Worker 검증 정정: `application-worker.yml`은 HTTP 서버를 띄우지 않는다. 따라서 `/actuator/health` 대신 systemd active, DB 연결 시작 로그, 기존 Worker inactive, 실제 분석 작업 성공으로 확인한다. Ubuntu Worker에서 가상 회의 5번·분석 작업 5번이 실제 CLOVA API로 SUCCEEDED를 반환했다.
+
+
+새 Ubuntu 전용 그룹 검증: KR-1 ASG 109054 / App 146197897 / 10.30.10.8, KR-2 ASG 109055 / App 146197891 / 10.30.110.7. 두 App 모두 Ubuntu 24.04.1·Java 21.0.11이며 jar SHA-256 `7309f9fd428bde2f49e10a6f618687d62f5be9110d72380ba03e01f4cc252ea0`가 일치한다. 직접 로그인·내 조직 조회·JS/CSS 요청 모두 200을 확인했다. 새 관리용 Bastion 경유로 두 App에 접속했다.
+
+신규 CPU 이벤트 규칙: 11911(a 확장→37877), 11912(a 축소→37875), 11913(b 확장→37876), 11914(b 축소→37874), 11915(Ubuntu Bastion·Worker). 기존 규칙 11904~11908만 삭제했다. Provider 4.0.5가 b 축소 정책을 확장 ID37876으로 저장해, 원격 실제 정책(-1, 600초)37874를 확인 후 보호된 state 백업과 import로 정정했다.

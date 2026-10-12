@@ -61,6 +61,13 @@ app:
     # real: CLOVA 실제 호출 / fake: 고정 응답 (fake-ai 프로필에서 바뀜)
     mode: real
   clova:
+    quota:
+      enabled: true
+      scope: main-HCX-007-test
+      requests-per-minute: 60
+      tokens-per-minute: 60000
+      budget-ratio: 0.9
+      max-wait: 30m
     studio:
       # 키는 환경변수로만 받는다. 비어 있으면 분석 작업이 AI_KEY_MISSING 으로 실패한다.
       api-key: ${CLOVA_STUDIO_API_KEY:}

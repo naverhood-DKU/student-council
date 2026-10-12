@@ -11,8 +11,9 @@ class AiConfig {
 
     @Bean
     @ConditionalOnProperty(name = "app.ai.mode", havingValue = "real", matchIfMissing = true)
-    StudioClient clovaStudioClient(StudioProperties properties, ObjectMapper objectMapper) {
-        return new ClovaStudioClient(properties, objectMapper);
+    StudioClient clovaStudioClient(StudioProperties properties, ObjectMapper objectMapper,
+                                  StudioQuotaProperties limits, StudioQuota quota) {
+        return new ClovaStudioClient(properties, objectMapper, limits.enabled() ? quota : null);
     }
 
     @Bean

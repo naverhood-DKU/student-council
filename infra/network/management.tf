@@ -5,7 +5,7 @@ resource "ncloud_login_key" "council" {
 }
 
 resource "ncloud_init_script" "bastion" {
-  count   = var.enable_management ? 1 : 0
+  count   = var.enable_management && var.enable_legacy_compute ? 1 : 0
   name    = "council-bastion-init"
   os_type = "LNX"
   content = templatefile("${path.module}/templates/bastion-init.sh.tftpl", {
@@ -14,7 +14,7 @@ resource "ncloud_init_script" "bastion" {
 }
 
 resource "ncloud_network_interface" "bastion" {
-  count                 = var.enable_management ? 1 : 0
+  count                 = var.enable_management && var.enable_legacy_compute ? 1 : 0
   name                  = "council-bastion-nic"
   subnet_no             = ncloud_subnet.council["bastion_a"].id
   private_ip            = "10.30.1.10"
@@ -22,7 +22,7 @@ resource "ncloud_network_interface" "bastion" {
 }
 
 resource "ncloud_server" "bastion" {
-  count                = var.enable_management ? 1 : 0
+  count                = var.enable_management && var.enable_legacy_compute ? 1 : 0
   name                 = "council-bastion-a"
   zone                 = "KR-1"
   subnet_no            = ncloud_subnet.council["bastion_a"].id
@@ -38,7 +38,7 @@ resource "ncloud_server" "bastion" {
 }
 
 resource "ncloud_public_ip" "bastion" {
-  count              = var.enable_management ? 1 : 0
+  count              = var.enable_management && var.enable_legacy_compute ? 1 : 0
   server_instance_no = ncloud_server.bastion[0].id
   description        = "Council management SSH; one admin IPv4 /32 only"
 }

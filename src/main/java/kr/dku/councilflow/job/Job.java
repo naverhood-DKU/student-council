@@ -31,6 +31,7 @@ public class Job extends BaseEntity {
     private int attempts;
 
     private Instant lockedUntil;
+    private Instant quotaWaitUntil;
 
     /** 오류 종류만 적는다. 회의 원문이나 모델 응답을 넣지 않는다. */
     @Column(length = 500)
@@ -51,30 +52,35 @@ public class Job extends BaseEntity {
         moveTo(JobStatus.RUNNING);
         attempts++;
         lockedUntil = leaseUntil;
+        quotaWaitUntil = null;
     }
 
     void succeed() {
         moveTo(JobStatus.SUCCEEDED);
         lockedUntil = null;
         lastError = null;
+        quotaWaitUntil = null;
     }
 
     void requeue(String error, Instant notBefore) {
         moveTo(JobStatus.QUEUED);
         lockedUntil = notBefore;
         lastError = error;
+        quotaWaitUntil = null;
     }
 
     void fail(String error) {
         moveTo(JobStatus.FAILED);
         lockedUntil = null;
         lastError = error;
+        quotaWaitUntil = null;
     }
 
     void failUnknown(String error) {
         moveTo(JobStatus.FAILED_UNKNOWN);
         lockedUntil = null;
         lastError = error;
+        quotaWaitUntil = null;
     }
 
     private void moveTo(JobStatus target) {
@@ -107,4 +113,6 @@ public class Job extends BaseEntity {
     public String getLastError() {
         return lastError;
     }
+
+    public Instant getQuotaWaitUntil() { return quotaWaitUntil; }
 }

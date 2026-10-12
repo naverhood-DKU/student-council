@@ -153,6 +153,7 @@ export interface Job {
   lastError: string | null
   createdAt: string
   updatedAt: string
+  quotaWaitUntil: string | null
 }
 
 export interface MeetingDetail {

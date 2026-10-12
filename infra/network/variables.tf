@@ -91,3 +91,53 @@ variable "app_launch_configuration_no" {
     error_message = "Provide the prepared G3 launch configuration number before enabling Auto Scaling."
   }
 }
+
+variable "enable_ubuntu_migration" {
+  description = "Provision parallel Ubuntu hosts; preserve existing deployment until cutover."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_ubuntu_migration || (var.enable_management && var.enable_application)
+    error_message = "Ubuntu migration requires existing management and application resources."
+  }
+}
+
+variable "enable_ubuntu_app_groups" {
+  description = "Create isolated Ubuntu App groups before retiring previous groups."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_ubuntu_app_groups || (var.enable_autoscaling && var.enable_ubuntu_migration)
+    error_message = "Ubuntu App groups require the prepared migration hosts and launch configuration."
+  }
+}
+
+variable "ubuntu_app_max_size_by_zone" {
+  description = "Ubuntu App ASG limits per zone. Set from capacity and single-App failure measurements; retain one minimum App per zone."
+  type        = map(number)
+  default     = { a = 2, b = 2 }
+  validation {
+    condition     = toset(keys(var.ubuntu_app_max_size_by_zone)) == toset(["a", "b"]) && alltrue([for limit in values(var.ubuntu_app_max_size_by_zone) : limit >= 1 && limit <= 30 && limit == floor(limit)])
+    error_message = "Provide integer limits from 1 to 30 for exactly zones a and b; each zone must retain its minimum App."
+  }
+}
+
+variable "enable_legacy_compute" {
+  description = "Retain Rocky Bastion and bootstrap compute until Ubuntu cutover is verified."
+  type        = bool
+  default     = true
+  validation {
+    condition     = var.enable_legacy_compute || var.enable_ubuntu_migration
+    error_message = "Do not retire legacy management/Worker without Ubuntu replacements."
+  }
+}
+
+variable "enable_legacy_app_groups" {
+  description = "Retain previous mixed-OS ASGs until both isolated Ubuntu groups are healthy."
+  type        = bool
+  default     = true
+  validation {
+    condition     = var.enable_legacy_app_groups || var.enable_ubuntu_app_groups
+    error_message = "Do not retire legacy App groups without isolated Ubuntu replacements."
+  }
+}

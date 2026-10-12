@@ -4,26 +4,37 @@ import { api, ApiError, type DecisionView, type OrgDetail, type Proposals, type 
 import { AI_STATUS_LABEL, DECISION_STATUS_LABEL, TASK_STATUS_LABEL } from '../labels'
 import { errorMessage, isOwner, useLoad } from '../useOrg'
 import { AddTaskForm } from './TaskForms'
+import { MeetingFlow } from './MeetingFlow'
 
 type Selection = { kind: 'decision' | 'task'; id: number; segmentIds: number[] } | null
 
 /**
- * AI 제안 검토 화면. 왼쪽은 결정·업무 후보 카드, 오른쪽은 회의록.
- * 카드를 누르면 근거 발언이 회의록에서 강조되고 카드 안에도 원문이 보인다.
+ * 회의록 → 결정 → 부서별 업무의 가지를 보여 준다.
+ * 선택한 가지의 검토·승인 편집기와 근거 회의록은 아래에서 함께 열린다.
  */
-export function ReviewPanel({ org, meetingId }: { org: OrgDetail; meetingId: number }) {
+export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDetail; meetingId: number; onReviewComplete?: (complete: boolean) => void }) {
   const [proposals, reload] = useLoad<Proposals>(
     () => api.proposals(meetingId),
     [meetingId],
     'AI 제안을 불러오지 못했습니다.',
   )
   const [selection, setSelection] = useState<Selection>(null)
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
 
   useEffect(() => {
+    if (proposals.status === 'ready') {
+      onReviewComplete?.(proposals.data.decisions.length > 0 && proposals.data.decisions.every(d => d.status === 'APPROVED' || d.status === 'CANCELLED'))
+    }
+  }, [proposals, onReviewComplete])
+
+  useEffect(() => {
+    if (!selection && !transcriptOpen) return
     const first = selection?.segmentIds[0]
-    if (first == null || !window.matchMedia('(min-width: 900px)').matches) return
-    document.getElementById(`seg-${first}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [selection])
+    const wide = window.matchMedia('(min-width: 900px)').matches
+    const evidence = wide && first != null ? document.getElementById(`seg-${first}`) : null
+    const target = evidence ?? document.getElementById('meeting-inspector')
+    target?.scrollIntoView({ block: evidence ? 'center' : 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }, [selection, transcriptOpen])
 
   if (proposals.status === 'loading') return <p className="page-message">AI 제안을 불러오는 중…</p>
   if (proposals.status === 'error') return <p className="error">{proposals.message}</p>
@@ -31,40 +42,39 @@ export function ReviewPanel({ org, meetingId }: { org: OrgDetail; meetingId: num
   const highlighted = new Set(selection?.segmentIds ?? [])
   const pending = data.decisions.filter((d) => d.status === 'PROPOSED').length
 
+  const selectedDecision = data.decisions.find(d => selection?.kind === 'decision'
+    ? d.id === selection.id : d.tasks.some(t => t.id === selection?.id))
+
   return (
     <>
-      <p className="muted small">
-        AI가 만든 <strong>후보</strong>입니다. 근거 발언을 확인하고 고친 뒤 승인해야 확정됩니다.
-        {pending > 0 ? ` 검토할 후보 ${pending}건.` : ' 모든 후보를 검토했습니다.'}{' '}
-        <Link to={`/orgs/${org.id}/board`}>업무보드 보기</Link>
-      </p>
-      <div className="review">
-        <div className="candidates">
-          {data.decisions.length === 0 && <p className="empty card">AI가 찾은 결정이 없습니다.</p>}
-          {data.decisions.map((decision) => (
-            <DecisionCard
-              key={`${decision.id}-${decision.version}`}
-              decision={decision}
-              departments={data.departments}
-              chair={isOwner(org)}
-              selection={selection}
-              onSelect={setSelection}
-              onChanged={reload}
-              deliveryLink={`/orgs/${org.id}/decisions/${decision.id}/deliveries`}
-            />
-          ))}
-        </div>
-        <aside className="transcript card" aria-label="회의록">
-          <h3>회의록</h3>
-          <ol className="segments">
-            {data.segments.map((s) => (
-              <li key={s.id} id={`seg-${s.id}`} className={highlighted.has(s.id) ? 'highlight' : undefined}>
-                <SegmentLine segment={s} />
-              </li>
-            ))}
-          </ol>
-        </aside>
+      <MeetingFlow data={data} selection={selection} onSelect={setSelection}
+        onOpenTranscript={() => {
+          setSelection(null)
+          setTranscriptOpen(true)
+          requestAnimationFrame(() => document.getElementById('meeting-inspector')?.scrollIntoView({ block: 'start', behavior: 'auto' }))
+        }} />
+      <div className="review-summary">
+        <p>{pending > 0 ? `${pending}개의 결정을 검토하면 업무가 확정됩니다.` : '결정 검토를 마쳤습니다. 업무보드에서 진행 상황을 확인하세요.'}</p>
+        <Link to={`/orgs/${org.id}/board`} className="ghost">업무보드로 이동 →</Link>
       </div>
+      <section id="meeting-inspector" className="meeting-inspector" hidden={!selectedDecision && !transcriptOpen} aria-label="선택한 결정과 근거 검토">
+        <header className="inspector-heading"><h3>{selectedDecision ? '선택한 결정 · 업무 검토' : '회의록 원문'}</h3>
+          <button type="button" className="link-button" onClick={() => { setSelection(null); setTranscriptOpen(false) }}>검토 창 닫기</button>
+        </header>
+        <div className={selectedDecision ? 'review' : 'transcript-only'}>
+          <div className="candidates" hidden={!selectedDecision}>
+            {data.decisions.map(decision => <div key={`${decision.id}-${decision.version}`} hidden={decision.id !== selectedDecision?.id}>
+              <DecisionCard decision={decision} departments={data.departments} chair={isOwner(org)}
+                selection={selection} onSelect={setSelection} onChanged={reload}
+                deliveryLink={`/orgs/${org.id}/decisions/${decision.id}/deliveries`} />
+            </div>)}
+          </div>
+          <aside className="transcript card" aria-label="회의록">
+            <h3>{selection ? '근거가 된 회의록' : '회의록 원문'}</h3><p className="muted small">{selection ? '선택한 결정·업무의 근거 발언을 강조했습니다.' : '회의에서 나눈 발언을 원문 그대로 확인하세요.'}</p>
+            <ol className="segments">{data.segments.map(s => <li key={s.id} id={`seg-${s.id}`} className={highlighted.has(s.id) ? 'highlight' : undefined}><SegmentLine segment={s} /></li>)}</ol>
+          </aside>
+        </div>
+      </section>
     </>
   )
 }
