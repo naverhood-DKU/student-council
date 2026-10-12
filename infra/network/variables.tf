@@ -160,3 +160,13 @@ variable "worker_launch_configuration_no" {
     error_message = "Provide a verified Worker launch configuration before enabling recovery."
   }
 }
+
+variable "enable_worker_second_zone" {
+  description = "Opt-in KR-2 fixed Worker for controlled reliability tests; retain only after dual-Worker acceptance."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_worker_second_zone || var.enable_worker_recovery
+    error_message = "Second-zone Worker requires the validated recovery runtime and shared quota configuration."
+  }
+}

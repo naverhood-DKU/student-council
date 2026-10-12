@@ -91,3 +91,9 @@ App은 웹·API를 함께 제공한다. Worker는 HTTP 서버 없이 AI 작업�
 프로그램 종료는 systemd `Restart=always`로 복구한다. VM 장애는 ASG가 교체한다. 진행 중 작업의 임대가 만료되면 재처리할 수 있지만, 공급자가 이미 처리한 AI 요청을 다시 호출할 수 있어 외부 API의 exactly-once를 보장하지 않는다. `FAILED_UNKNOWN`은 자동 재호출 대상이 아니다. 작업 큐 대기와 실제 프로그램 멈춤은 VM 검사로 판별하지 못한다.
 
 검증은 프로그램 강제 종료와 VM 중지를 분리하고, VM 중지 중 접수한 합성 분석이 DB에서 대기한 뒤 새 서버에서 성공하는지 확인한다. 서버 교체 시간·분석 대기 시간은 따로 기록한다. 이 구성은 복구 중 분석이 일시 중단되며, KR-1 전체 장애를 KR-2 Worker로 넘기는 구성은 아니다. ASG 서버 ID/IP는 교체되므로 SSH 별칭·서버별 알람 대상·자원 관리표도 현재 API 목록을 기준으로 갱신한다.
+
+### 두 존 Worker 검증 선택
+
+`enable_worker_second_zone = true`는 KR-2의 고정 1대 ASG를 추가한다. 기본값은 false이며 KR-1 고정 1대와 기존 주소를 유지한다. 두 ASG는 같은 `worker_launch_configuration_no`·DB 큐·CLOVA quota scope를 사용하고 HTTP LB를 연결하지 않는다. 새 실행 구성은 수정된 jar의 단일 Worker canary를 통과한 이미지로 준비한다.
+
+작업 임대 90초·독립 심박 15초 및 소유권 보호 시험, 새 PR CI를 통과한 뒤 임시로 활성화한다. 50건×3회 비교와 양쪽 장애 인계가 통과해야 두 대를 유지한다. 실패하면 두 번째 ASG를 정리하고 단일 Worker로 돌아간다. `plan`의 변경은 Worker A 실행 구성 갱신과 Worker B 생성뿐인지 확인하며 App·DB·네트워크 재생성은 허용하지 않는다. 상태 파일은 기존 운영 state 한 곳을 사용하고 백업·원출력·자원 ID는 로컬에만 저장한다.

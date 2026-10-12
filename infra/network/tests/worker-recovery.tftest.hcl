@@ -31,3 +31,31 @@ run "single_worker_recovery_has_no_load_balancer_or_scaling_policy" {
     error_message = "Recovered Worker must retain private subnet and Worker-only ACG."
   }
 }
+run "second_zone_is_explicit_and_counts_both_fixed_workers" {
+  command = apply
+  variables {
+    enable_worker_recovery         = true
+    enable_worker_second_zone      = true
+    worker_launch_configuration_no = "12345"
+  }
+  assert {
+    condition     = output.worker_recovery.capacity == 2
+    error_message = "Explicit second-zone opt-in must provision two fixed Workers."
+  }
+}
+run "second_zone_keeps_same_image_and_private_worker_network" {
+  command = apply
+  variables {
+    enable_worker_recovery         = true
+    enable_worker_second_zone      = true
+    worker_launch_configuration_no = "12345"
+  }
+  assert {
+    condition     = ncloud_auto_scaling_group.worker_b[0].min_size == 1 && ncloud_auto_scaling_group.worker_b[0].max_size == 1 && ncloud_auto_scaling_group.worker_b[0].desired_capacity == 1 && ncloud_auto_scaling_group.worker_b[0].health_check_type_code == "SVR" && length(ncloud_auto_scaling_group.worker_b[0].target_group_list) == 0
+    error_message = "Second Worker is fixed capacity VM recovery; no HTTP LB or CPU throughput scaling."
+  }
+  assert {
+    condition     = ncloud_auto_scaling_group.worker_b[0].subnet_no == ncloud_subnet.council["worker_b"].id && ncloud_auto_scaling_group.worker_b[0].launch_configuration_no == ncloud_auto_scaling_group.worker[0].launch_configuration_no && ncloud_auto_scaling_group.worker_b[0].access_control_group_no_list == tolist([ncloud_access_control_group.council["worker"].id])
+    error_message = "Both Workers share runtime image and private Worker ACG, in separate zones."
+  }
+}
