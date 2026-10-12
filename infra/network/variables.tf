@@ -141,3 +141,22 @@ variable "enable_legacy_app_groups" {
     error_message = "Do not retire legacy App groups without isolated Ubuntu replacements."
   }
 }
+
+variable "enable_worker_recovery" {
+  description = "Fixed one-Worker ASG for VM recovery. Stop the standalone Worker before activation; never enable two active pollers during cutover."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_worker_recovery || var.enable_ubuntu_migration
+    error_message = "Worker recovery requires the prepared Ubuntu runtime."
+  }
+}
+variable "worker_launch_configuration_no" {
+  description = "Prepared private Worker image's G3 launch configuration with tested worker startup."
+  type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_worker_recovery || can(regex("^[0-9]+$", var.worker_launch_configuration_no))
+    error_message = "Provide a verified Worker launch configuration before enabling recovery."
+  }
+}

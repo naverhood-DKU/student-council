@@ -78,3 +78,16 @@ jar 실행 설정은 `infra/runtime/`에 있다. 환경변수 파일은 root 060
 최신 자원·역할·이름은 [자원 관리표](../../docs/infra.md)의 현재 운영 상태를 기준으로 한다. 위 초기 Rocky 생성 기록은 전환 전 이력이다. 현재 운영에는 `enable_ubuntu_migration=true`, `enable_ubuntu_app_groups=true`, `enable_legacy_compute=false`, `enable_legacy_app_groups=false`를 사용하며 management/application/nat/autoscaling은 활성화한다. 기존 기본값은 이전 사용자의 구성을 보존하므로, 현재 환경을 재구성할 때 이 플래그를 생략하지 않는다. LC는 39685이며 다른 계정에서는 이미지·LC·자원 번호를 새로 준비한다.
 
 App은 웹·API를 함께 제공한다. Worker는 HTTP 서버 없이 AI 작업을 처리한다. ASG 서버 접두사는 `app-kr1`, `app-kr2`이며 초기 서버명은 자원 관리표에 기록했다. 현재 모의 테스트 15개가 통과했고 실제 적용 후 변경 0개를 확인했다. 녹음 전사는 아직 구현하지 않았다.
+
+
+### Worker 고정 1대 복구
+
+`enable_worker_recovery=true`와 `worker_launch_configuration_no`는 Worker 전용 ASG를 활성화한다. 최소·기본·최대는 모두 1이며, Worker Private Subnet과 전용 ACG를 사용한다. HTTP 서버가 없는 Worker에는 LB를 연결하지 않고 `SVR` 검사와 기본 300초 기동 유예를 사용한다. 처리량 증가 정책은 만들지 않는다.
+
+현재 배포 jar·`prod,worker` 설정·Java 21·자동 기동 가능한 systemd unit을 가진 비공개 Worker 이미지와 G3 Launch Configuration을 먼저 준비한다. 이미지·스냅샷에 운영 설정이 포함되므로 접근을 제한하고 교체 시 키와 이미지 수명을 함께 관리한다. App 이미지나 App Launch Configuration을 재사용하면 안 된다.
+
+전환 전에 미완료 작업을 확인하고 기존 Worker를 중지·자동 시작 비활성화한 뒤 ASG를 활성화한다. 새 Worker에서 jar 해시, systemd 상태, DB 연결, 실제 합성 회의 분석을 확인한다. 기존 서버는 중지된 복구용 자원으로 보관하며 디스크 과금과 삭제 일정을 별도 관리한다. 동작하는 기존 Worker와 새 Worker를 동시에 켜지 않는다.
+
+프로그램 종료는 systemd `Restart=always`로 복구한다. VM 장애는 ASG가 교체한다. 진행 중 작업의 임대가 만료되면 재처리할 수 있지만, 공급자가 이미 처리한 AI 요청을 다시 호출할 수 있어 외부 API의 exactly-once를 보장하지 않는다. `FAILED_UNKNOWN`은 자동 재호출 대상이 아니다. 작업 큐 대기와 실제 프로그램 멈춤은 VM 검사로 판별하지 못한다.
+
+검증은 프로그램 강제 종료와 VM 중지를 분리하고, VM 중지 중 접수한 합성 분석이 DB에서 대기한 뒤 새 서버에서 성공하는지 확인한다. 서버 교체 시간·분석 대기 시간은 따로 기록한다. 이 구성은 복구 중 분석이 일시 중단되며, KR-1 전체 장애를 KR-2 Worker로 넘기는 구성은 아니다. ASG 서버 ID/IP는 교체되므로 SSH 별칭·서버별 알람 대상·자원 관리표도 현재 API 목록을 기준으로 갱신한다.

@@ -16,3 +16,9 @@ database_password = ""
 # the official API before enabling the two zone-specific ASGs.
 enable_autoscaling = false
 app_launch_configuration_no = ""
+
+# Fixed one-Worker recovery only: prepare a private runtime image first.
+# Stop the standalone Worker BEFORE enabling this flag.
+# VM checks do not detect a hung analysis process or a whole-zone outage.
+enable_worker_recovery = false
+worker_launch_configuration_no = ""
