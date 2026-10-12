@@ -13,6 +13,7 @@ import org.springframework.test.context.TestPropertySource;
 class JobHeartbeatTest extends IntegrationTest {
     @Autowired JobRunner runner;
     @Autowired JobRepository jobs;
+    @Autowired org.springframework.transaction.PlatformTransactionManager manager;
 
     @Test void AI응답을_기다리는_동안_심박이_임대를_유지해_다른_Worker가_가져가지_못한다() throws Exception {
         long meeting=createMeeting("ce",orgId("컴퓨터공학과 학생회"),JobRunnerTest.TRANSCRIPT);
@@ -50,6 +51,25 @@ class JobHeartbeatTest extends IntegrationTest {
             assertThat(runner.runOnce()).isTrue();
             assertThat(jobs.findById(id).orElseThrow().getStatus()).isEqualTo(JobStatus.SUCCEEDED);
             assertThat(jobs.findById(id).orElseThrow().getAttempts()).isEqualTo(2);
+        }
+    }
+    @Test void 행잠금을_기다리다_만료된_심박은_임대를_갱신하지_않는다() throws Exception {
+        long meeting=createMeeting("ce",orgId("컴퓨터공학과 학생회"),JobRunnerTest.TRANSCRIPT);
+        long id=requestAnalysis("ce",meeting);
+        var reply=FakeClovaServer.ok(JobRunnerTest.VALID);
+        CLOVA.enqueue(new FakeClovaServer.Reply(reply.status(),reply.body(),1500));
+        try(var pool=Executors.newSingleThreadExecutor()) {
+            var result=pool.submit(()->runner.runOnce());
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
+            while(CLOVA.requests().isEmpty() && System.nanoTime()<deadline)Thread.sleep(10);
+            var before=new java.util.concurrent.atomic.AtomicReference<String>();
+            new org.springframework.transaction.support.TransactionTemplate(manager).executeWithoutResult(status->{
+                before.set(jdbc.queryForObject("SELECT CAST(locked_until AS CHAR) FROM job WHERE id=? FOR UPDATE",String.class,id));
+                try {Thread.sleep(900);} catch(InterruptedException e) {throw new RuntimeException(e);}
+            });
+            result.get(5,TimeUnit.SECONDS);
+            assertThat(jdbc.queryForObject("SELECT CAST(locked_until AS CHAR) FROM job WHERE id=?",String.class,id)).isEqualTo(before.get());
+            assertThat(jobs.findById(id).orElseThrow().getStatus()).isEqualTo(JobStatus.RUNNING);
         }
     }
 }
