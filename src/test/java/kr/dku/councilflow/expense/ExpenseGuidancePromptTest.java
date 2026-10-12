@@ -77,7 +77,7 @@ class ExpenseGuidancePromptTest {
         // 잘려 나간 뒷부분을 인용하면 검증에서 걸러진다.
         ParsedGuidance parsed = new ParsedGuidance(
                 List.of(new ParsedGuidance.Cited("끝 문장", List.of("C1"), "끝부분에만 있는 문장입니다")),
-                List.of(), List.of(), List.of(), "");
+                List.of(), List.of(), List.of(), List.of(), "");
         ExpenseGuidanceValidator.Validated validated = ExpenseGuidanceValidator.validate(parsed, built.candidates());
         assertThat(validated.approvals()).isEmpty();
         assertThat(validated.droppedCount()).isEqualTo(1);

@@ -424,7 +424,7 @@ class ExpenseGuidanceTest extends ExpenseTestSupport {
         ExpenseGuidanceValidator.Validated late = new ExpenseGuidanceValidator.Validated(
                 ExpenseReviewStatus.POSSIBLE_CONFLICT,
                 List.of(new ExpenseGuidanceValidator.Item("늦게 온 승인", List.of(clauseId), "늦게 온 인용 구절")),
-                List.of(), List.of(), List.of(), "늦게 온 안내", 0, List.of());
+                List.of(), List.of(), List.of(), List.of(), "늦게 온 안내", 0, List.of());
         new TransactionTemplate(transactionManager).executeWithoutResult(
                 s -> handler.onSuccess(id, new ExpenseGuidanceHandler.Result(late)));
 
@@ -492,6 +492,88 @@ class ExpenseGuidanceTest extends ExpenseTestSupport {
         json(patch("/api/expense-review-items/{id}", num(locked, "$.checklist[0].id"))
                         .header(HttpHeaders.IF_MATCH, num(locked, "$.checklist[0].version")),
                 owner, Map.of("checked", false)).andExpect(status().isConflict());
+    }
+
+    // ---- 금지·제한 ----
+
+    @Test
+    void 금지_조항이_확인되면_금지_가능성으로_보이고_근거_조항에_금지_표현이_있다고_알린다() throws Exception {
+        long ce = orgId("컴퓨터공학과 학생회");
+        String owner = bearer("ce");
+        String marker = "퓨퓨랑랑";
+        registerRule(owner, ce, String.join("\n",
+                "지출 규정 " + marker + System.nanoTime(),
+                "제1조(사용 제한) " + marker + " 행사에는 학생회비 사용을 금지한다.",
+                "제2조(증빙) " + marker + " 지출은 영수증을 첨부한다.",
+                "제3조(결재) " + marker + " 지출은 재정부장이 확인한다."));
+        String created = requestReview(owner, ce, marker, null);
+        long id = num(created, "$.id");
+        List<String> texts = JsonPath.read(created, "$.candidates[*].text");
+        int ban = -1;
+        int other = -1;
+        for (int i = 0; i < texts.size(); i++) {
+            if (texts.get(i).contains("금지한다")) {
+                ban = i;
+            } else if (other < 0 && texts.get(i).contains(marker)) {
+                other = i;
+            }
+        }
+        assertThat(ban).isGreaterThanOrEqualTo(0);
+        assertThat(other).isGreaterThanOrEqualTo(0);
+
+        CLOVA.enqueue(FakeClovaServer.ok(aiWithRestrictions(
+                List.of(cite("재정부장 확인", texts.get(other), "C" + (other + 1))), List.of(),
+                List.of(restrict("PROHIBITED", marker + " 행사에는 학생회비를 쓸 수 없다", "학생회비 사용을 금지한다", "C" + (ban + 1))),
+                List.of(), List.of(), "조항 원문을 확인하세요.")));
+        assertThat(jobRunner.runOnce()).isTrue();
+
+        view(owner, id)
+                .andExpect(jsonPath("$.status").value("POSSIBLY_RESTRICTED"))
+                .andExpect(jsonPath("$.guidance.outcome").value("POSSIBLY_RESTRICTED"))
+                .andExpect(jsonPath("$.guidance.restrictions", hasSize(1)))
+                .andExpect(jsonPath("$.guidance.restrictions[0].kind").value("PROHIBITED"))
+                .andExpect(jsonPath("$.guidance.restrictions[0].quote").value("학생회비 사용을 금지한다"))
+                .andExpect(jsonPath("$.guidance.restrictions[0].clauses[0].mentionsRestriction").value(true))
+                .andExpect(jsonPath("$.candidates[" + ban + "].mentionsRestriction").value(true))
+                .andExpect(jsonPath("$.candidates[" + other + "].mentionsRestriction").value(false))
+                .andExpect(jsonPath("$.notices", hasItem(containsString("금지하거나 제한하는"))));
+
+        // 금지 가능성이라도 사람이 확인했다는 표시(검토 완료)는 같은 규칙으로 할 수 있고, 안내 결과는 남는다.
+        String ready = viewBody(owner, id);
+        mvc.perform(post("/api/expense-reviews/{id}/review", id).header(HttpHeaders.AUTHORIZATION, owner)
+                        .header(HttpHeaders.IF_MATCH, num(ready, "$.version")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REVIEWED"))
+                .andExpect(jsonPath("$.guidance.outcome").value("POSSIBLY_RESTRICTED"));
+    }
+
+    @Test
+    void 모델이_금지_조항을_승인으로_분류해도_서버가_금지로_옮겨_승인_체크리스트에_남지_않는다() throws Exception {
+        long ce = orgId("컴퓨터공학과 학생회");
+        String owner = bearer("ce");
+        String marker = "삐삐몽몽";
+        registerRule(owner, ce, String.join("\n",
+                "지출 규정 " + marker + System.nanoTime(),
+                "제1조(한도) " + marker + " 간식비는 1인당 1만원을 넘지 못한다.",
+                "제2조(증빙) " + marker + " 지출은 영수증을 첨부한다."));
+        String created = requestReview(owner, ce, marker, null);
+        long id = num(created, "$.id");
+        List<String> texts = JsonPath.read(created, "$.candidates[*].text");
+        int limit = texts.indexOf(texts.stream().filter(t -> t.contains("넘지 못한다")).findFirst().orElseThrow());
+
+        // 한도 조항을 "필요한 승인"으로 잘못 분류한 응답
+        CLOVA.enqueue(FakeClovaServer.ok(ai(
+                List.of(cite("간식 구입에 대한 승인", "1인당 1만원을 넘지 못한다", "C" + (limit + 1))),
+                List.of(), List.of(), List.of(), "")));
+        assertThat(jobRunner.runOnce()).isTrue();
+
+        view(owner, id)
+                .andExpect(jsonPath("$.checklist", hasSize(0)))
+                .andExpect(jsonPath("$.guidance.restrictions", hasSize(1)))
+                .andExpect(jsonPath("$.guidance.restrictions[0].kind").value("LIMITED"))
+                .andExpect(jsonPath("$.guidance.restrictions[0].text").value("1인당 1만원을 넘지 못한다"))
+                .andExpect(jsonPath("$.guidance.droppedNotes", hasItem(containsString("금지·제한으로 옮겼습니다"))))
+                .andExpect(jsonPath("$.status").value("PROCEDURE_FOUND"));
     }
 
     // ---- 승인된 결정에서 채우기 ----

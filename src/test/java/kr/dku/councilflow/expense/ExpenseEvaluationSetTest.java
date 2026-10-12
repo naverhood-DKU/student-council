@@ -18,7 +18,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
 /**
- * 평가셋(scripts/eval/expense): 사람이 정답 조항을 정해 둔 지출 사례 9건으로 확인한다.
+ * 평가셋(scripts/eval/expense/synthetic): 가상 재정 세칙과, 사람이 정답 조항을 정해 둔 지출 사례 9건으로 확인한다.
+ * 실제 규정으로 하는 평가는 ExpenseRealRulesEvaluationTest 이다. 이 가상 세트는 실제 규정에 없는
+ * "30만원 이상 사전 승인" 같은 금액 기준 검색을 계속 확인하려고 남겨 두었다.
  * - 정답 조항이 후보에 있고, 나오면 안 되는 조항은 없다.
  * - 규정에서 못 찾는 지출은 NEEDS_CHECK 이며 "문제가 없다는 뜻이 아닙니다"라고 알린다.
  * - 화면에 나오는 후보 조항 원문은 DB 의 Clause.text 와, 그리고 규정 파일의 그 조항 줄과 100% 같다.
@@ -29,7 +31,7 @@ import tools.jackson.databind.JsonNode;
  */
 class ExpenseEvaluationSetTest extends ExpenseTestSupport {
 
-    private static final Path DIR = Path.of("scripts", "eval", "expense");
+    private static final Path DIR = Path.of("scripts", "eval", "expense", "synthetic");
     private static final Pattern ARTICLE_LINE = Pattern.compile("^(제\\d+조).*$");
 
     @Autowired
@@ -119,6 +121,14 @@ class ExpenseEvaluationSetTest extends ExpenseTestSupport {
                     continue;
                 }
                 String shown = viewBody(group.ownerToken(), num(created, "$.id"));
+                if (RestrictionWords.isPlainRestriction(texts.get(index))) {
+                    // 한도·금지를 말하는 조항(예: 제5조 "1인당 1만원을 넘지 못한다")은 승인이 아니라 금지·제한으로 나온다.
+                    String restrictedLabel = JsonPath.read(shown, "$.guidance.restrictions[0].clauses[0].label");
+                    if (!restrictedLabel.equals(expectLabels.get(0))) {
+                        failures.add(id + ": 금지·제한 근거가 " + restrictedLabel);
+                    }
+                    continue;
+                }
                 String checkedLabel = JsonPath.read(shown, "$.checklist[0].clauses[0].label");
                 String quote = JsonPath.read(shown, "$.checklist[0].quote");
                 if (!checkedLabel.equals(expectLabels.get(0))) {
