@@ -4,9 +4,9 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface JobRepository extends JpaRepository<Job, Long> {
 
@@ -16,30 +16,29 @@ public interface JobRepository extends JpaRepository<Job, Long> {
      * - RUNNING: 임대 시간(locked_until)이 지났으면(Worker가 죽은 것으로 본다)
      * 다른 Worker가 잠근 행은 건너뛴다(SKIP LOCKED). 반드시 트랜잭션 안에서 부른다.
      *
-     * ORDER BY 를 쓰지 않는 이유: 정렬(filesort)이 끼면 MySQL이 조건에 맞는 행을 전부 읽으면서 전부 잠가 버려서,
+     * ORDER BY 를 쓰지 않는 이유: 정렬(filesort)이 끼면 MySQL이 조건에 맞는 행을 전부 읽으면서 전부 잠궈 버려서,
      * 다른 Worker가 SKIP LOCKED 로 아무것도 못 가져간다. 대신 idx_job_poll(status, locked_until, id) 순서로
-     * 읽게 해서 첫 행 하나만 잠그고 멈춘다. 결과 순서는 QUEUED(대기 시각 없음 → 오래된 id 먼저) → RUNNING.
+     * 읽게 해서 첫 행 하나만 잠그고 멈춘다. 결과 순서는 QUEUED(대기 시각 없음 -> 오래된 id 먼저) -> RUNNING.
      */
     @Query(value = """
             SELECT id FROM job FORCE INDEX (idx_job_poll)
-             WHERE (status = 'QUEUED' AND (locked_until IS NULL OR locked_until <= :now))
-                OR (status = 'RUNNING' AND locked_until <= :now)
-             LIMIT 1
-             FOR UPDATE SKIP LOCKED
+            WHERE (status = 'QUEUED' AND (locked_until IS NULL OR locked_until <= :now))
+               OR (status = 'RUNNING' AND locked_until <= :now)
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     Optional<Long> lockNextClaimableId(Instant now);
-
-    /** Renew only a live claim. Keep version unchanged: it identifies the owning attempt. */
-    @Modifying
-    @Transactional
-    @Query(value = """
-            UPDATE job SET locked_until = :until, updated_at = :now
-             WHERE id = :id AND version = :version AND status = 'RUNNING'
-               AND locked_until > :now
-            """, nativeQuery = true)
-    int renewLease(long id, long version, Instant now, Instant until);
 
     Optional<Job> findFirstByTypeAndTargetIdOrderByIdDesc(JobType type, Long targetId);
 
     boolean existsByTypeAndTargetIdAndStatusIn(JobType type, Long targetId, Collection<JobStatus> statuses);
+
+    @Modifying
+    @Query("UPDATE Job j SET j.lockedUntil = :newExpiresAt WHERE j.id = :jobId AND j.version = :version AND j.lockedUntil = :oldExpiresAt")
+    int renewLease(
+        @Param("jobId") long jobId,
+        @Param("version") long version,
+        @Param("oldExpiresAt") Instant oldExpiresAt,
+        @Param("newExpiresAt") Instant newExpiresAt
+    );
 }

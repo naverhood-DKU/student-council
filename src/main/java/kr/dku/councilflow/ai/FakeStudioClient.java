@@ -1,28 +1,17 @@
 package kr.dku.councilflow.ai;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
- * fake-ai 프로필: CLOVA를 부르지 않고 고정된 모양의 결과를 돌려준다(부하 실험·데모 예비용).
- * 내용은 실제 분석이 아니다.
- *
- * - 회의 분석: 근거 발언 ID는 회의록에 실제로 있는 앞쪽 발언을 쓴다.
- * - 지출 안내: 후보 첫 조항([C1])의 첫 줄을 그대로 인용한다. 서버 검증을 실제로 통과하지만 "(가짜 AI)" 표시가 붙는다.
+ * fake-ai 프로필: CLOVA를 부르지 않고 고정된 모양의 회의 분석 결과를 돌려준다(부하 실험·데모 예비용).
+ * 근거 발언 ID는 회의록에 실제로 있는 앞쪽 발언을 쓴다. 내용은 실제 분석이 아니다.
  */
 public class FakeStudioClient implements StudioClient {
 
     private static final Pattern SEGMENT_ID = Pattern.compile("\\[(S\\d+)]");
-    /** 지출 안내 프롬프트의 첫 후보: "[C1] 규정 이름 …" 줄 다음 줄이 조항 원문의 첫 줄이다. */
-    private static final Pattern FIRST_CLAUSE = Pattern.compile("(?m)^\\[C1] .*\\R(.+)$");
-    /** 적용 재확인 프롬프트의 항목 이름: 줄 앞의 "[A1] …", "[E2] …", "[R1] …" */
-    private static final Pattern ITEM_NAME = Pattern.compile("(?m)^\\[([AER]\\d+)] ");
-    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     @Override
     public StudioReply chat(StudioRequest request) {
@@ -31,12 +20,6 @@ public class FakeStudioClient implements StudioClient {
                 .reduce((first, second) -> second)
                 .map(Message::content)
                 .orElse("");
-        if (lastUser.contains("<항목>") && lastUser.contains("<지출정보>")) {
-            return new StudioReply(applicability(lastUser), "stop");
-        }
-        if (lastUser.contains("<지출정보>")) {
-            return new StudioReply(expenseGuidance(lastUser), "stop");
-        }
         List<String> ids = new ArrayList<>();
         Matcher matcher = SEGMENT_ID.matcher(lastUser);
         while (matcher.find() && ids.size() < 3) {
@@ -53,39 +36,5 @@ public class FakeStudioClient implements StudioClient {
                 }]}]}
                 """.formatted(first, last);
         return new StudioReply(content, "stop");
-    }
-
-    /** 적용 재확인: 모든 항목이 해당한다고 답한다(실제 판단이 아니다). */
-    private static String applicability(String prompt) {
-        List<Object> verdicts = new ArrayList<>();
-        Matcher matcher = ITEM_NAME.matcher(prompt);
-        while (matcher.find()) {
-            Map<String, Object> verdict = new LinkedHashMap<>();
-            verdict.put("id", matcher.group(1));
-            verdict.put("applies", "YES");
-            verdict.put("quote_supports", "YES");
-            verdicts.add(verdict);
-        }
-        return JSON.writeValueAsString(Map.of("verdicts", verdicts));
-    }
-
-    private static String expenseGuidance(String prompt) {
-        Matcher matcher = FIRST_CLAUSE.matcher(prompt);
-        Map<String, Object> result = new LinkedHashMap<>();
-        List<Object> approvals = new ArrayList<>();
-        if (matcher.find()) {
-            Map<String, Object> approval = new LinkedHashMap<>();
-            approval.put("text", "(가짜 AI) 첫 번째 후보 조항을 확인하세요");
-            approval.put("clause_ids", List.of("C1"));
-            approval.put("quote", matcher.group(1).strip());
-            approvals.add(approval);
-        }
-        result.put("required_approvals", approvals);
-        result.put("required_evidence", List.of());
-        result.put("restrictions", List.of());
-        result.put("conflicts", List.of());
-        result.put("missing_facts", List.of());
-        result.put("guidance", "(가짜 AI) 고정 응답입니다. 실제 분석이 아닙니다. 후보 조항 원문을 직접 확인하세요.");
-        return JSON.writeValueAsString(result);
     }
 }
