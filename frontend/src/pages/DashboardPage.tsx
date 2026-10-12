@@ -4,6 +4,7 @@ import { useAuth } from '../auth'
 import { formatDateTime, MEETING_STATUS_LABEL, ORG_TYPE_LABEL, ROLE_LABEL } from '../labels'
 import { isOwner, useLoad, useOrg } from '../useOrg'
 import { TopBar } from './TopBar'
+import { FlowIcon } from './MeetingFlow'
 
 export function DashboardPage() {
   const orgId = Number(useParams().orgId)
@@ -60,10 +61,20 @@ function Dashboard({ org }: { org: OrgDetail }) {
         )}
       </section>
 
-      <div className="actions-row">
-        {owner && (
-          <Link to={`/orgs/${org.id}/meetings/new`} className="button primary-link">회의록 올리기</Link>
-        )}
+      <section className="meeting-hero">
+        <div className="hero-copy"><span className="eyebrow">회의가 끝나면, 일이 시작됩니다</span>
+          <h1>회의록 한 장에서<br />각 부서의 다음 할 일까지.</h1>
+          <p>결정사항과 담당 부서를 AI가 연결합니다.<br />근거를 확인하고 승인하면 업무보드로 이어집니다.</p>
+          {owner && <Link to={`/orgs/${org.id}/meetings/new`} className="button primary-link">회의에서 업무 만들기 <span aria-hidden="true">↗</span></Link>}
+          <span className="hero-source-note">현재 텍스트·PDF 지원 · 녹음 업로드 준비 중</span>
+        </div>
+        <div className="hero-flow" aria-label="회의록에서 결정사항과 부서 업무가 만들어지는 과정">
+          <div className="hero-flow-source"><FlowIcon kind="meeting" /><strong>회의록</strong><span>회의에서 나눈 이야기</span></div>
+          <div className="hero-flow-decision"><FlowIcon kind="branch" /><strong>결정사항</strong><span>근거와 함께 정리</span></div>
+          <div className="hero-flow-tasks"><span><FlowIcon kind="task" /><strong>부서별 업무</strong></span><span className="muted small">담당 · 기한 · 승인 상태</span></div>
+        </div>
+      </section>
+      <div className="actions-row dashboard-navigation">
         <Link to={`/orgs/${org.id}/board`} className="ghost">부서 업무보드</Link>
         <Link to={`/orgs/${org.id}/inbox`} className="ghost">
           받은 요청{openInbox > 0 && <span className="count-badge">{openInbox}</span>}
@@ -95,11 +106,11 @@ function Dashboard({ org }: { org: OrgDetail }) {
       )}
 
       <section className="card">
-        <h3>회의</h3>
+        <h3>회의에서 이어진 업무</h3>
         {meetings.status === 'loading' && <p className="muted">불러오는 중…</p>}
         {meetings.status === 'error' && <p className="error">{meetings.message}</p>}
         {meetings.status === 'ready' && meetings.data.length === 0 && (
-          <p className="empty">아직 등록된 회의가 없습니다.</p>
+          <p className="empty">첫 회의록을 올리면 결정사항과 부서별 업무가 연결됩니다.</p>
         )}
         {meetings.status === 'ready' && meetings.data.length > 0 && (
           <ul className="row-list">
