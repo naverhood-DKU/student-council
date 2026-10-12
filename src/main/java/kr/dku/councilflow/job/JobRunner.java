@@ -30,14 +30,16 @@ public class JobRunner {
     private final TransactionTemplate tx;
     private final WorkerProperties properties;
     private final Clock clock;
+    private final JobHeartbeat heartbeat;
 
     JobRunner(JobRepository jobs, List<JobHandler<?>> handlers, PlatformTransactionManager transactionManager,
-              WorkerProperties properties, Clock clock) {
+              WorkerProperties properties, Clock clock, JobHeartbeat heartbeat) {
         this.jobs = jobs;
         handlers.forEach(handler -> this.handlers.put(handler.type(), handler));
         this.tx = new TransactionTemplate(transactionManager);
         this.properties = properties;
         this.clock = clock;
+        this.heartbeat = heartbeat;
     }
 
     /** 가져오기 결과. exhausted 면 시도 횟수를 다 써서 이미 FAILED 로 정리한 작업이다. */
@@ -82,22 +84,26 @@ public class JobRunner {
         MDC.put("jobVersion", String.valueOf(claim.version()));
         long startedAt = System.nanoTime();
         JobHandler handler = handler(claim.type());
-        String outcome;
-        try {
-            Object result = handler.execute(claim.targetId());
-            outcome = recordSuccess(claim, handler, result);
-        } catch (JobFailure failure) {
-            outcome = recordFailure(claim, failure, handler);
-        } catch (RuntimeException unexpected) {
-            // 예외 메시지에 회의 원문이 섞일 수 있어 종류만 남긴다.
-            log.error("job handler error type={}", unexpected.getClass().getName());
-            log.debug("job handler error detail", unexpected);
-            outcome = recordFailure(claim, JobFailure.permanent("INTERNAL_ERROR"), handler);
+        String outcome = "LEASE_LOST";
+        try (var lease = heartbeat.start(claim.jobId(), claim.version())) {
+            try {
+                Object result = handler.execute(claim.targetId());
+                lease.stop();
+                if (!lease.lost()) outcome = recordSuccess(claim, handler, result);
+            } catch (JobFailure failure) {
+                lease.stop();
+                if (!lease.lost()) outcome = recordFailure(claim, failure, handler);
+            } catch (RuntimeException unexpected) {
+                lease.stop();
+                log.error("job handler error type={}", unexpected.getClass().getName());
+                if (!lease.lost()) outcome = recordFailure(claim, JobFailure.permanent("INTERNAL_ERROR"), handler);
+            }
+        } finally {
+            long tookMs = (System.nanoTime() - startedAt) / 1_000_000;
+            log.info("job type={} attempt finished outcome={} took={}ms", claim.type(), outcome, tookMs);
+            MDC.remove("jobId");
+            MDC.remove("jobVersion");
         }
-        long tookMs = (System.nanoTime() - startedAt) / 1_000_000;
-        log.info("job type={} attempt finished outcome={} took={}ms", claim.type(), outcome, tookMs);
-        MDC.remove("jobId");
-        MDC.remove("jobVersion");
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -146,8 +152,9 @@ public class JobRunner {
 
     /** 아직 내가 임대한 작업이면 돌려주고, 다른 Worker가 가져갔거나 끝났으면 null. */
     private Job ownedJob(Claim claim) {
-        Job job = jobs.findById(claim.jobId()).orElseThrow();
-        if (job.getStatus() != JobStatus.RUNNING || job.getVersion() != claim.version()) {
+        Job job = jobs.lockOwnedRow(claim.jobId()).orElseThrow();
+        if (Thread.currentThread().isInterrupted() || job.getStatus() != JobStatus.RUNNING || job.getVersion() != claim.version()
+                || job.getLockedUntil() == null || !job.getLockedUntil().isAfter(clock.instant())) {
             log.warn("job={} lease lost; result discarded", claim.jobId());
             return null;
         }

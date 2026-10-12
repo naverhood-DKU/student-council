@@ -27,6 +27,10 @@ public interface JobRepository extends JpaRepository<Job, Long> {
             """, nativeQuery = true)
     Optional<Long> lockNextClaimableId(Instant now);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select j from Job j where j.id = :id")
+    Optional<Job> lockOwnedRow(long id);
+
     Optional<Job> findFirstByTypeAndTargetIdOrderByIdDesc(JobType type, Long targetId);
 
     boolean existsByTypeAndTargetIdAndStatusIn(JobType type, Long targetId, Collection<JobStatus> statuses);

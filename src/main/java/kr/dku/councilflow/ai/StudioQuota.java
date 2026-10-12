@@ -10,6 +10,10 @@ import org.slf4j.MDC;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.transaction.TransactionDefinition;
+import java.util.function.Supplier;
+import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -29,14 +33,14 @@ public class StudioQuota {
     public StudioQuota(JdbcTemplate jdbc,PlatformTransactionManager manager,StudioQuotaProperties properties,
                        WorkerProperties worker,Clock clock) {
         this.jdbc=jdbc;this.tx=new TransactionTemplate(manager);this.properties=properties;this.worker=worker;this.clock=clock;
+        this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /** null이면 예약 성공, 그 외에는 아직 호출하지 말고 반환된 시각까지 기다린다. */
     public Instant reserve(int tokens,Instant now) {
         int maxTokens=(int)(properties.tokensPerMinute()*properties.budgetRatio());
         if(tokens<0 || tokens>maxTokens) throw new StudioException(StudioException.Kind.PERMANENT,"AI_REQUEST_EXCEEDS_QUOTA");
-        return tx.execute(status->{
-            initialize(now);
+        return withBudget(now,()->{
             State s=locked();
             if(s.cooldown()!=null && s.cooldown().isAfter(now)) return s.cooldown();
             if(!s.until().isAfter(now)) s=new State(now.plusSeconds(61),0,0,s.cooldown());
@@ -52,6 +56,7 @@ public class StudioQuota {
         Instant announced=null;
         long waitedNanos=0;
         while(true) {
+            leaseAndNotice(null);
             Instant now=clock.instant();Instant until=reserve(tokens,now);
             if(until==null) {leaseAndNotice(null);log.info("studio quota reserved tokens={} waited_ms={}",tokens,java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(waitedNanos));return;}
             if(!now.isBefore(deadline)) throw new StudioException(StudioException.Kind.PERMANENT,"AI_QUOTA_WAIT_TIMEOUT");
@@ -65,9 +70,9 @@ public class StudioQuota {
     }
 
     public void cooldown(Instant until) {
-        tx.executeWithoutResult(status->{initialize(clock.instant());State s=locked();
+        withBudget(clock.instant(),()->{State s=locked();
             Instant cooldown=s.cooldown()==null || s.cooldown().isBefore(until)?until:s.cooldown();
-            persist(new State(s.until(),s.requests(),s.tokens(),cooldown));});
+            persist(new State(s.until(),s.requests(),s.tokens(),cooldown));return null;});
     }
 
     /** 429는 공유 냉각을 적용한다. 성공 시에도 다른 경로에서 소비된 잔량을 보수적으로 반영한다. */
@@ -78,10 +83,29 @@ public class StudioQuota {
                 number(headers,"x-ratelimit-limit-requests",-1),number(headers,"x-ratelimit-limit-tokens",-1),requests,tokens,reset,limited);
         if(limited) {long seconds=Math.max(61,Math.max(reset+1,seconds(headers,"retry-after",0)));cooldown(now.plusSeconds(seconds));log.warn("studio quota cooldown limited=true seconds={}",seconds);return;}
         if(requests<0 && tokens<0) return;
-        tx.executeWithoutResult(status->{initialize(now);State s=locked();
+        withBudget(now,()->{State s=locked();
             Instant until=reset>0 && now.plusSeconds(reset+1).isAfter(s.until())?now.plusSeconds(reset+1):s.until();
             persist(new State(until,(int)Math.max(s.requests(),requests<0?0:properties.requestsPerMinute()-requests),
-                    Math.max(s.tokens(),tokens<0?0:properties.tokensPerMinute()-tokens),s.cooldown()));});
+                    Math.max(s.tokens(),tokens<0?0:properties.tokensPerMinute()-tokens),s.cooldown()));return null;});
+    }
+
+    private <T> T withBudget(Instant now, Supplier<T> operation) {
+        for(int attempt=0;attempt<3;attempt++) {
+            try {
+                // INSERT IGNORE can take a shared record lock for an existing key.
+                // Commit initialization before taking the reservation's exclusive lock.
+                tx.executeWithoutResult(status->initialize(now));
+                return tx.execute(status->operation.get());
+            } catch(PessimisticLockingFailureException busy) {
+                if(attempt==2) throw new StudioException(StudioException.Kind.RETRYABLE,"AI_QUOTA_LOCK_BUSY");
+                try {Thread.sleep(ThreadLocalRandom.current().nextLong(15,41));}
+                catch(InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new StudioException(StudioException.Kind.UNKNOWN_OUTCOME,"AI_INTERRUPTED");
+                }
+            }
+        }
+        throw new IllegalStateException("unreachable quota retry");
     }
 
     private void initialize(Instant now) {
@@ -96,9 +120,16 @@ public class StudioQuota {
     }
     private void leaseAndNotice(Instant until) {
         String id=MDC.get("jobId"),version=MDC.get("jobVersion");if(id==null || version==null) return;
-        // 진행 표시와 임대 갱신은 도메인 version을 올리지 않고, 소유권 version으로 보호한다.
-        int changed=jdbc.update("UPDATE job SET locked_until=?,quota_wait_until=? WHERE id=? AND version=? AND status='RUNNING'",
-                Timestamp.from(clock.instant().plus(worker.lease())),until==null?null:Timestamp.from(until),Long.parseLong(id),Long.parseLong(version));
+        // 임대는 독립 심박만 갱신한다. 호출 직전·대기 중에도 소유권과 만료를 검사한다.
+        int changed=jdbc.update(connection->{
+            var statement=connection.prepareStatement("""
+                    UPDATE job SET quota_wait_until=?
+                     WHERE id=? AND version=? AND status='RUNNING' AND locked_until>UTC_TIMESTAMP(6)
+                    """);
+            statement.setTimestamp(1,until==null?null:Timestamp.from(until),java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")));
+            statement.setLong(2,Long.parseLong(id));statement.setLong(3,Long.parseLong(version));
+            return statement;
+        });
         if(changed!=1) throw new StudioException(StudioException.Kind.UNKNOWN_OUTCOME,"AI_LEASE_LOST");
     }
     private static long number(HttpHeaders h,String key,long fallback) {
