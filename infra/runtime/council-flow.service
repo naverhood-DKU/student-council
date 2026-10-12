@@ -1,0 +1,28 @@
+[Unit]
+Description=Student council decision tracking service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=councilflow
+Group=councilflow
+WorkingDirectory=/opt/council-flow
+EnvironmentFile=/etc/council-flow/runtime.env
+ExecStart=/usr/lib/jvm/jre-21-openjdk/bin/java -Xms256m -Xmx1024m -jar /opt/council-flow/app.jar
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+SuccessExitStatus=143
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/council-flow
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
