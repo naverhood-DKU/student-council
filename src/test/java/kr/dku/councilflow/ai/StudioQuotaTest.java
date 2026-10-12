@@ -68,7 +68,7 @@ class StudioQuotaTest extends IntegrationTest {
         }
     }
     @Test void 냉각과_잔량피드백과_예약의_100회_경쟁에서_차감과_냉각을_잃지_않는다() throws Exception {
-        Instant now=Instant.now();
+        Instant now=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         var headers=java.net.http.HttpHeaders.of(java.util.Map.of(
             "x-ratelimit-remaining-requests",java.util.List.of("59"),
             "x-ratelimit-remaining-tokens",java.util.List.of("59000")),(k,v)->true);
