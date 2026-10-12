@@ -21,6 +21,36 @@ public final class SearchTerms {
     private SearchTerms() {
     }
 
+    /**
+     * 금액을 규정에서 흔히 쓰는 한국식 표기로 바꾼 검색어. 규정에는 "30만원 이상"처럼 쓰이므로 300000 → "30만원".
+     * 금액이 없거나 0 이하면 null. 숫자만 늘어놓은 표기("300000원")는 ngram 으로 아무 숫자나 걸려서 쓰지 않는다.
+     *
+     * 예) 300000 → 30만원 / 15000 → 1만5천원 / 5000 → 5천원 / 120000000 → 1억2000만원
+     * 천 원 단위로 떨어지지 않는 나머지는 버리고 만 원 단위로 쓴다(규정의 기준 금액은 대개 딱 떨어진다).
+     */
+    public static String amountTerms(Long amount) {
+        if (amount == null || amount <= 0) {
+            return null;
+        }
+        long eok = amount / 100_000_000L;
+        long rest = amount % 100_000_000L;
+        long man = rest / 10_000L;
+        long remainder = rest % 10_000L;
+        String form;
+        if (eok > 0) {
+            form = man == 0 ? eok + "억원" : eok + "억" + man + "만원";
+        } else if (man > 0) {
+            form = remainder != 0 && remainder % 1000 == 0
+                    ? man + "만" + (remainder / 1000) + "천원"
+                    : man + "만원";
+        } else if (remainder % 1000 == 0) {
+            form = (remainder / 1000) + "천원";
+        } else {
+            return null;
+        }
+        return build(form);
+    }
+
     /** 검색어를 만든다. 쓸 만한 낱말이 하나도 없으면 null. */
     public static String build(String... parts) {
         Set<String> words = new LinkedHashSet<>();

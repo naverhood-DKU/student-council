@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import kr.dku.councilflow.common.BaseEntity;
@@ -47,6 +48,23 @@ public class ExpenseReview extends BaseEntity {
 
     private Long requestedBy;
 
+    /** AI 가 더 있어야 절차를 가릴 수 있다고 한 사실. 서버 검증을 통과한 AI 안내와 함께 저장한다. */
+    @Convert(converter = JsonColumns.StringList.class)
+    @Column(name = "missing_facts", columnDefinition = "json")
+    private List<String> missingFacts;
+
+    /** 서버 검증을 통과한 AI 참고 안내문. 조항으로 확인된 내용이 아니다. */
+    @Column(columnDefinition = "text")
+    private String guidance;
+
+    @Convert(converter = GuidanceResult.Converter.class)
+    @Column(name = "ai_result", columnDefinition = "json")
+    private GuidanceResult aiResult;
+
+    private Long reviewedBy;
+
+    private Instant reviewedAt;
+
     protected ExpenseReview() {
     }
 
@@ -77,4 +95,27 @@ public class ExpenseReview extends BaseEntity {
     public ExpenseReviewStatus getStatus() { return status; }
     public List<Long> getClauseIds() { return clauseIds == null ? List.of() : clauseIds; }
     public Long getRequestedBy() { return requestedBy; }
+    public List<String> getMissingFacts() { return missingFacts == null ? List.of() : missingFacts; }
+    public String getGuidance() { return guidance; }
+    public GuidanceResult getAiResult() { return aiResult; }
+    public Long getReviewedBy() { return reviewedBy; }
+    public Instant getReviewedAt() { return reviewedAt; }
+
+    /**
+     * 서버 검증을 통과한 AI 안내를 붙이고 상태를 정한다. 사람이 이미 검토 완료한 건은 호출하는 쪽에서 막는다.
+     * status 는 PROCEDURE_FOUND / POSSIBLE_CONFLICT / NEEDS_CHECK 중 하나다("문제없음" 상태는 없다).
+     */
+    void applyGuidance(ExpenseReviewStatus status, GuidanceResult result, List<String> missingFacts, String guidance) {
+        this.status = status;
+        this.aiResult = result;
+        this.missingFacts = List.copyOf(missingFacts);
+        this.guidance = guidance;
+    }
+
+    /** 사람이 AI 안내와 조항 원문을 확인했다는 표시. "규정에 맞다"는 뜻이 아니다. */
+    void markReviewed(Long userId, Instant now) {
+        this.status = ExpenseReviewStatus.REVIEWED;
+        this.reviewedBy = userId;
+        this.reviewedAt = now;
+    }
 }

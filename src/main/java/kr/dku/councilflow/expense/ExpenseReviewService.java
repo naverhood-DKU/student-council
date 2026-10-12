@@ -5,58 +5,76 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import kr.dku.councilflow.audit.AuditService;
 import kr.dku.councilflow.auth.CurrentUser;
 import kr.dku.councilflow.auth.OrgAccess;
 import kr.dku.councilflow.auth.OrgAccessGuard;
 import kr.dku.councilflow.common.error.ApiException;
 import kr.dku.councilflow.common.error.ErrorCode;
+import kr.dku.councilflow.common.web.IfMatch;
 import kr.dku.councilflow.decision.Decision;
 import kr.dku.councilflow.decision.DecisionRepository;
 import kr.dku.councilflow.decision.DecisionStatus;
 import kr.dku.councilflow.decision.ExpenseProposal;
+import kr.dku.councilflow.job.Job;
+import kr.dku.councilflow.job.JobRepository;
+import kr.dku.councilflow.job.JobStatus;
+import kr.dku.councilflow.job.JobType;
+import kr.dku.councilflow.job.JobView;
 import kr.dku.councilflow.rule.Clause;
 import kr.dku.councilflow.rule.ClauseRepository;
 import kr.dku.councilflow.rule.RuleDocStatus;
 import kr.dku.councilflow.rule.RuleDocument;
 import kr.dku.councilflow.rule.RuleDocumentRepository;
-import kr.dku.councilflow.user.MembershipRole;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 지출 절차 검토 요청과 후보 조항 찾기.
+ * 지출 절차 검토: 후보 조항 찾기(AI 없이) → AI 절차 안내(작업 큐) → 사람의 검토 완료.
  *
- * 요청하면 그 그룹이 확정한 규정에서 관련 조항을 FULLTEXT 로 찾아 후보로 저장한다. 이 단계에서 AI 는 쓰지 않는다.
- * - 조항 원문은 DB 의 검수된 Clause.text 를 그대로 돌려준다(원칙 4).
- * - 후보를 못 찾으면 NEEDS_CHECK 이다. "문제없음" 상태는 없다(원칙 5).
- * - 요청은 부장급 이상(회장·부장)이 할 수 있고 부원은 볼 수만 있다. 서비스 관리자는 읽기 전용이다.
- *   (재정부 부장이 어디까지 할지는 정해지는 대로 조정한다.)
+ * - 조항 원문은 DB 의 검수된 Clause.text 를 그대로 돌려준다. AI 는 조항 이름과 안내문만 낸다(원칙 4).
+ * - 후보를 못 찾거나 서버 검증을 통과한 안내가 없으면 NEEDS_CHECK 이다. "문제없음" 상태는 없다(원칙 5).
+ * - 후보가 있을 때만 EXPENSE 작업을 만든다. 후보가 없으면 AI 를 부르지 않는다.
+ * - 권한은 ExpenseReviewPolicy 에 모아 두었다. 서비스 관리자는 읽기 전용이다.
  */
 @Service
 public class ExpenseReviewService {
 
     static final int MAX_CANDIDATES = 10;
+    /** 금액 표기("30만원")로만 걸려 덧붙는 후보의 최대 개수. "만원" 같은 글자 조각 때문에 잡음이 늘지 않게 한다. */
+    static final int MAX_AMOUNT_CANDIDATES = 3;
+    private static final int SEARCH_TEXT_MAX = 600;
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    /** 화면과 API 가 항상 같이 보여 주는 고정 안내문. 모델이 쓰지 않는다. */
+    static final String DISCLAIMER = "이 안내는 감사를 대체하지 않습니다. 조항 원문을 직접 확인하고, "
+            + "적용 여부와 필요한 절차는 사람이 판단해 주세요.";
 
     private final ExpenseReviewRepository reviews;
+    private final ExpenseChecklistItemRepository checklist;
     private final ClauseRepository clauses;
     private final RuleDocumentRepository docs;
     private final DecisionRepository decisions;
+    private final JobRepository jobs;
     private final OrgAccessGuard accessGuard;
     private final AuditService audit;
     private final Clock clock;
 
-    ExpenseReviewService(ExpenseReviewRepository reviews, ClauseRepository clauses, RuleDocumentRepository docs,
-                         DecisionRepository decisions, OrgAccessGuard accessGuard, AuditService audit, Clock clock) {
+    ExpenseReviewService(ExpenseReviewRepository reviews, ExpenseChecklistItemRepository checklist,
+                         ClauseRepository clauses, RuleDocumentRepository docs, DecisionRepository decisions,
+                         JobRepository jobs, OrgAccessGuard accessGuard, AuditService audit, Clock clock) {
         this.reviews = reviews;
+        this.checklist = checklist;
         this.clauses = clauses;
         this.docs = docs;
         this.decisions = decisions;
+        this.jobs = jobs;
         this.accessGuard = accessGuard;
         this.audit = audit;
         this.clock = clock;
@@ -71,9 +89,27 @@ public class ExpenseReviewService {
                                 String docTitle, String docVersion, LocalDate docEffectiveDate, RuleDocStatus docStatus) {
     }
 
+    /** 화면에서 근거 조항으로 연결하기 위한 짧은 참조 */
+    public record ClauseRef(long clauseId, String label, String docTitle) {
+    }
+
+    public record ChecklistItemView(long id, ChecklistKind kind, String text, List<ClauseRef> clauses, String quote,
+                                    boolean checked, Instant checkedAt, long version) {
+    }
+
+    public record ConflictView(String description, List<ClauseRef> clauses) {
+    }
+
+    /** 서버 검증을 통과한 AI 안내. note 는 조항으로 확인된 내용이 아니라 참고용이다. */
+    public record GuidanceView(String outcome, List<ConflictView> conflicts, List<String> missingFacts, String note,
+                               int droppedCount, List<String> droppedNotes, String generatedAt) {
+    }
+
     public record ReviewView(long id, long orgId, Long decisionId, String item, Long amount, String fundSource,
                              LocalDate plannedDate, String note, String searchText, ExpenseReviewStatus status,
-                             List<CandidateView> candidates, List<String> notices, Instant createdAt, long version) {
+                             List<CandidateView> candidates, List<String> notices, GuidanceView guidance,
+                             List<ChecklistItemView> checklist, JobView job, String disclaimer, Instant reviewedAt,
+                             Instant createdAt, long version) {
     }
 
     public record ReviewSummary(long id, String item, Long amount, ExpenseReviewStatus status, int candidateCount,
@@ -87,7 +123,7 @@ public class ExpenseReviewService {
         }
         long orgId = request.orgId();
         OrgAccess access = accessGuard.requireMember(user, orgId);
-        if (access.adminView() || access.role() == MembershipRole.VIEWER) {
+        if (!ExpenseReviewPolicy.canRequestOrWork(access)) {
             throw new ApiException(ErrorCode.FORBIDDEN, "회장이나 부장급 직책만 지출 검토를 요청할 수 있습니다.");
         }
 
@@ -123,17 +159,39 @@ public class ExpenseReviewService {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "지출 항목에 두 글자 이상의 낱말이 있어야 규정에서 찾을 수 있습니다.");
         }
         LocalDate asOf = request.plannedDate() != null ? request.plannedDate() : LocalDate.now(clock.withZone(SEOUL));
-        List<Clause> found = clauses.searchConfirmed(orgId, query, asOf, MAX_CANDIDATES);
+        List<Clause> found = new ArrayList<>(clauses.searchConfirmed(orgId, query, asOf, MAX_CANDIDATES));
+
+        // 금액이 있으면 "30만원"처럼 규정에 쓰인 표기로도 찾는다. 항목으로 찾은 조항 뒤에만 덧붙여서,
+        // 금액만 언급한 조항이 항목에 맞는 조항보다 위로 올라오지 않게 한다.
+        String searchText = query;
+        String amountQuery = SearchTerms.amountTerms(amount);
+        if (amountQuery != null && found.size() < MAX_CANDIDATES) {
+            Set<Long> seen = new LinkedHashSet<>(found.stream().map(Clause::getId).toList());
+            int appended = 0;
+            for (Clause clause : clauses.searchConfirmed(orgId, amountQuery, asOf, MAX_CANDIDATES)) {
+                if (found.size() < MAX_CANDIDATES && appended < MAX_AMOUNT_CANDIDATES && seen.add(clause.getId())) {
+                    found.add(clause);
+                    appended++;
+                }
+            }
+            searchText = truncate(query + " " + amountQuery, SEARCH_TEXT_MAX);
+        }
         ExpenseReviewStatus status = found.isEmpty() ? ExpenseReviewStatus.NEEDS_CHECK : ExpenseReviewStatus.CANDIDATES_FOUND;
 
         ExpenseReview review = reviews.save(new ExpenseReview(orgId, decisionId, item, amount, fundSource,
-                request.plannedDate(), note, query, status, found.stream().map(Clause::getId).toList(), access.userId()));
+                request.plannedDate(), note, searchText, status, found.stream().map(Clause::getId).toList(), access.userId()));
+
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("item", item);
         after.put("amount", amount);
         after.put("decisionId", decisionId);
         after.put("status", status.name());
         after.put("candidateClauseIds", review.getClauseIds());
+        if (status == ExpenseReviewStatus.CANDIDATES_FOUND) {
+            // 후보가 있을 때만 AI 안내 작업을 만든다. 후보가 없으면 AI 를 부르지 않는다.
+            Job job = jobs.save(Job.queue(JobType.EXPENSE, review.getId()));
+            after.put("jobId", job.getId());
+        }
         audit.record(access.userId(), orgId, "EXPENSE_REVIEW_REQUESTED", "EXPENSE_REVIEW", review.getId(), null, after);
         return view(review);
     }
@@ -149,12 +207,97 @@ public class ExpenseReviewService {
 
     @Transactional(readOnly = true)
     public ReviewView get(CurrentUser user, long reviewId) {
-        ExpenseReview review = reviews.findById(reviewId).orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+        ExpenseReview review = load(reviewId);
         accessGuard.requireMember(user, review.getOrgId());
         return view(review);
     }
 
+    /**
+     * AI 안내 다시 받기. 이미 대기·진행 중인 작업이 있으면 그 작업을 돌려주고 새로 만들지 않는다.
+     * 검토 완료된 건과 후보 조항이 없는 건은 409.
+     */
+    @Transactional
+    public JobView requestGuidance(CurrentUser user, long reviewId) {
+        ExpenseReview review = load(reviewId);
+        OrgAccess access = accessGuard.requireMember(user, review.getOrgId());
+        if (!ExpenseReviewPolicy.canRequestOrWork(access)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "회장이나 부장급 직책만 AI 안내를 다시 받을 수 있습니다.");
+        }
+        if (review.getStatus() == ExpenseReviewStatus.REVIEWED) {
+            throw new ApiException(ErrorCode.INVALID_TRANSITION, "검토 완료한 건은 AI 안내를 다시 받을 수 없습니다.");
+        }
+        if (review.getClauseIds().isEmpty()) {
+            throw new ApiException(ErrorCode.INVALID_TRANSITION,
+                    "후보 조항이 없어 AI 안내를 받을 수 없습니다. 규정을 확정하거나 찾을 말을 바꿔 새로 요청해 주세요.");
+        }
+        var active = jobs.findFirstByTypeAndTargetIdOrderByIdDesc(JobType.EXPENSE, reviewId)
+                .filter(job -> EnumSet.of(JobStatus.QUEUED, JobStatus.RUNNING).contains(job.getStatus()));
+        if (active.isPresent()) {
+            return JobView.of(active.get());
+        }
+        Job job = jobs.save(Job.queue(JobType.EXPENSE, reviewId));
+        audit.record(access.userId(), review.getOrgId(), "EXPENSE_GUIDANCE_REQUESTED", "EXPENSE_REVIEW", reviewId,
+                null, Map.of("jobId", job.getId()));
+        return JobView.of(job);
+    }
+
+    /**
+     * 검토 완료. "규정에 맞다"가 아니라 "사람이 AI 안내와 조항 원문을 확인했다"는 표시다.
+     * AI 안내가 끝난 뒤에만, 한 번만 할 수 있다.
+     */
+    @Transactional
+    public ReviewView complete(CurrentUser user, long reviewId, String ifMatch) {
+        ExpenseReview review = load(reviewId);
+        OrgAccess access = accessGuard.requireMember(user, review.getOrgId());
+        if (!ExpenseReviewPolicy.canComplete(access)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "그룹 회장만 검토 완료를 표시할 수 있습니다.");
+        }
+        IfMatch.check(ifMatch, review.getVersion());
+        if (review.getStatus() == ExpenseReviewStatus.REVIEWED) {
+            throw new ApiException(ErrorCode.INVALID_TRANSITION, "이미 검토 완료한 건입니다.");
+        }
+        if (review.getAiResult() == null || review.getStatus() == ExpenseReviewStatus.CANDIDATES_FOUND) {
+            throw new ApiException(ErrorCode.INVALID_TRANSITION, "AI 안내가 끝난 뒤에 검토 완료를 표시할 수 있습니다.");
+        }
+        ExpenseReviewStatus before = review.getStatus();
+        review.markReviewed(access.userId(), clock.instant());
+        audit.record(access.userId(), review.getOrgId(), "EXPENSE_REVIEW_COMPLETED", "EXPENSE_REVIEW", reviewId,
+                Map.of("status", before.name()), Map.of("status", ExpenseReviewStatus.REVIEWED.name()));
+        reviews.flush();
+        return view(review);
+    }
+
+    /** 체크리스트 항목 체크/해제. 검토 완료 뒤에는 잠긴다. */
+    @Transactional
+    public ChecklistItemView setChecked(CurrentUser user, long itemId, String ifMatch, Boolean checked) {
+        ExpenseChecklistItem item = checklist.findById(itemId).orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+        ExpenseReview review = load(item.getReviewId());
+        OrgAccess access = accessGuard.requireMember(user, review.getOrgId());
+        if (!ExpenseReviewPolicy.canRequestOrWork(access)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "회장이나 부장급 직책만 체크리스트를 바꿀 수 있습니다.");
+        }
+        IfMatch.check(ifMatch, item.getVersion());
+        if (checked == null) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "checked 값을 보내 주세요.");
+        }
+        if (review.getStatus() == ExpenseReviewStatus.REVIEWED) {
+            throw new ApiException(ErrorCode.INVALID_TRANSITION, "검토 완료한 건의 체크리스트는 바꿀 수 없습니다.");
+        }
+        boolean before = item.isChecked();
+        if (before != checked) {
+            item.setChecked(checked, access.userId(), clock.instant());
+            audit.record(access.userId(), review.getOrgId(), "EXPENSE_CHECKLIST_CHANGED", "EXPENSE_CHECKLIST_ITEM",
+                    itemId, Map.of("checked", before), Map.of("checked", checked));
+            checklist.flush();
+        }
+        return checklistView(item, clauseRefs(review));
+    }
+
     // ---- 내부 ----
+
+    private ExpenseReview load(long reviewId) {
+        return reviews.findById(reviewId).orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+    }
 
     private ReviewView view(ExpenseReview review) {
         List<Long> ids = review.getClauseIds();
@@ -165,6 +308,7 @@ public class ExpenseReviewService {
                 .forEach(d -> docById.put(d.getId(), d));
 
         List<CandidateView> candidates = new ArrayList<>();
+        Map<Long, ClauseRef> refs = new HashMap<>();
         int rank = 0;
         for (Long id : ids) {
             Clause c = byId.get(id);
@@ -174,11 +318,59 @@ public class ExpenseReviewService {
             }
             candidates.add(new CandidateView(c.getId(), ++rank, c.getLabel(), c.getTitle(), c.getText(), d.getId(),
                     d.getTitle(), d.getDocVersion(), d.getEffectiveDate(), d.getStatus()));
+            refs.put(c.getId(), new ClauseRef(c.getId(), c.getLabel(), d.getTitle()));
         }
+
+        GuidanceView guidance = null;
+        GuidanceResult ai = review.getAiResult();
+        if (ai != null) {
+            List<ConflictView> conflicts = ai.conflicts() == null ? List.of() : ai.conflicts().stream()
+                    .map(c -> new ConflictView(c.description(), refsOf(c.clauseIds(), refs)))
+                    .toList();
+            guidance = new GuidanceView(ai.outcome(), conflicts, review.getMissingFacts(), review.getGuidance(),
+                    ai.droppedCount(), ai.droppedNotes() == null ? List.of() : ai.droppedNotes(), ai.generatedAt());
+        }
+        List<ChecklistItemView> items = checklist.findByReviewIdOrderBySeq(review.getId()).stream()
+                .map(i -> checklistView(i, refs))
+                .toList();
+        JobView job = jobs.findFirstByTypeAndTargetIdOrderByIdDesc(JobType.EXPENSE, review.getId())
+                .map(JobView::of).orElse(null);
         return new ReviewView(review.getId(), review.getOrgId(), review.getDecisionId(), review.getItem(),
                 review.getAmount(), review.getFundSource(), review.getPlannedDate(), review.getNote(),
-                review.getSearchText(), review.getStatus(), candidates, notices(review, candidates),
-                review.getCreatedAt(), review.getVersion());
+                review.getSearchText(), review.getStatus(), candidates, notices(review, candidates), guidance, items,
+                job, DISCLAIMER, review.getReviewedAt(), review.getCreatedAt(), review.getVersion());
+    }
+
+    private Map<Long, ClauseRef> clauseRefs(ExpenseReview review) {
+        Map<Long, ClauseRef> refs = new HashMap<>();
+        Map<Long, Clause> byId = new HashMap<>();
+        clauses.findAllById(review.getClauseIds()).forEach(c -> byId.put(c.getId(), c));
+        Map<Long, RuleDocument> docById = new HashMap<>();
+        docs.findAllById(byId.values().stream().map(Clause::getDocId).distinct().toList())
+                .forEach(d -> docById.put(d.getId(), d));
+        byId.values().forEach(c -> {
+            RuleDocument d = docById.get(c.getDocId());
+            if (d != null) {
+                refs.put(c.getId(), new ClauseRef(c.getId(), c.getLabel(), d.getTitle()));
+            }
+        });
+        return refs;
+    }
+
+    private static ChecklistItemView checklistView(ExpenseChecklistItem item, Map<Long, ClauseRef> refs) {
+        return new ChecklistItemView(item.getId(), item.getKind(), item.getText(), refsOf(item.getClauseIds(), refs),
+                item.getQuote(), item.isChecked(), item.getCheckedAt(), item.getVersion());
+    }
+
+    private static List<ClauseRef> refsOf(List<Long> clauseIds, Map<Long, ClauseRef> refs) {
+        List<ClauseRef> result = new ArrayList<>();
+        for (Long id : clauseIds) {
+            ClauseRef ref = refs.get(id);
+            if (ref != null) {
+                result.add(ref);
+            }
+        }
+        return result;
     }
 
     /** 사람이 결과를 읽을 때 놓치면 안 되는 점. 저장하지 않고 볼 때마다 계산한다. */
@@ -203,7 +395,20 @@ public class ExpenseReviewService {
         if (docIds > titles) {
             notices.add("같은 이름의 규정이 여러 버전으로 확정돼 있습니다. 옛 버전은 폐기해 주세요.");
         }
+        GuidanceResult ai = review.getAiResult();
+        if (ai != null && ai.droppedCount() > 0) {
+            notices.add("AI 안내 중 서버 검증을 통과하지 못한 " + ai.droppedCount() + "개 항목을 제외했습니다. "
+                    + "빠진 내용이 있을 수 있으니 조항 원문을 직접 확인해 주세요.");
+        }
+        if (ai != null && ExpenseReviewStatus.NEEDS_CHECK.name().equals(ai.outcome())) {
+            notices.add("AI 안내에서 조항으로 확인된 승인·증빙 항목이 없습니다. 이것은 문제가 없다는 뜻이 아닙니다. "
+                    + "후보 조항 원문을 직접 확인해 주세요.");
+        }
         return notices;
+    }
+
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
     private static boolean blank(String value) {

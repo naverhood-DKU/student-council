@@ -51,7 +51,6 @@ export function ReviewPanel({ org, meetingId }: { org: OrgDetail; meetingId: num
               onSelect={setSelection}
               onChanged={reload}
               deliveryLink={`/orgs/${org.id}/decisions/${decision.id}/deliveries`}
-              expenseLink={expenseLinkFor(org, decision)}
             />
           ))}
         </div>
@@ -108,16 +107,6 @@ function conflictAware(e: unknown, onChanged: () => void, fallback: string): str
   return errorMessage(e, fallback)
 }
 
-/** 승인된 결정에 지출 언급이 있으면, 값을 미리 채운 지출 절차 확인 주소를 만든다. 요청은 회장·부장급만 할 수 있다. */
-function expenseLinkFor(org: OrgDetail, decision: DecisionView): string | null {
-  const proposal = decision.expenseProposal
-  if (decision.status !== 'APPROVED' || !proposal || (org.myRole !== 'OWNER' && org.myRole !== 'EDITOR')) return null
-  const query = new URLSearchParams({ decisionId: String(decision.id), item: proposal.item })
-  if (proposal.amount != null) query.set('amount', String(proposal.amount))
-  if (proposal.fundSource) query.set('fundSource', proposal.fundSource)
-  return `/orgs/${org.id}/expense?${query.toString()}`
-}
-
 interface CardProps {
   decision: DecisionView
   departments: { id: number; name: string }[]
@@ -127,11 +116,9 @@ interface CardProps {
   onChanged: () => void
   /** 승인된 결정의 업무 요청 화면 주소 */
   deliveryLink: string | null
-  /** 승인된 결정의 지출 절차 확인 화면 주소(지출 언급이 있을 때만) */
-  expenseLink: string | null
 }
 
-function DecisionCard({ decision, departments, chair, selection, onSelect, onChanged, deliveryLink, expenseLink }: CardProps) {
+function DecisionCard({ decision, departments, chair, selection, onSelect, onChanged, deliveryLink }: CardProps) {
   const editable = chair && (decision.status === 'PROPOSED' || decision.status === 'ON_HOLD')
   const canAddTask = chair && (editable || decision.status === 'APPROVED')
   const [summary, setSummary] = useState(decision.summary)
@@ -229,7 +216,6 @@ function DecisionCard({ decision, departments, chair, selection, onSelect, onCha
       {decision.status === 'APPROVED' && deliveryLink && (
         <Link to={deliveryLink} className="ghost deliver-link">다른 그룹에 업무 요청 · 요청 현황</Link>
       )}
-      {expenseLink && <Link to={expenseLink} className="ghost deliver-link">지출 절차 확인</Link>}
       {editable && (
         <div className="actions-row">
           {summary.trim() !== decision.summary && (
