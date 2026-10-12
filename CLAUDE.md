@@ -64,8 +64,9 @@ Spring Boot 4는 starter가 모듈로 나뉘어 있다. 의존성을 추가할 �
 | JoinRequest | id, user_id, org_id, status, decided_by, decided_at, reject_reason, version — (user_id, org_id) 고유, 다시 신청하면 같은 줄을 PENDING 으로 |
 | Delivery | id, decision_id, from_org_id, to_org_id, request_type(INFORM/COOPERATE/RESULT_NOTICE), status, due_date, message(요청 사항), internal_department_id(수신 조직 내 담당), clarification_reason/reply, closing_reason, previous_due_date·due_changed_at(기한 변경 표시), created_by, version |
 | Submission | id, delivery_id, result_link, description, submitted_by, review_status(PENDING/APPROVED/REJECTED), reviewed_by, review_comment, reviewed_at — 고치지 않고 새로 제출 |
-| RuleDocument / Clause | doc: title, issuer, applies_to_org_id, effective_date, doc_version(규정 버전), file_key, reviewed_by · clause: doc_id, number, title, text(FULLTEXT ngram 인덱스) |
-| ExpenseReview | id, org_id, item, amount, fund_source, planned_date, status, clause_ids, missing_facts, guidance, reviewed_by |
+| RuleDocument / Clause | doc(`rule_document`): applies_to_org_id(등록해 쓰는 그룹), title, source_type(지금은 REGULATION만), issuer, applies_to, effective_date, doc_version(규정 버전), notes, file_name·source_sha256(원본 PDF는 저장하지 않음, file_key 미사용), source_text(쪽번호만 걷어낸 추출 글자), roundtrip_ok, status(DRAFT/CONFIRMED/RETIRED), reviewed_by·reviewed_at · clause: doc_id, seq, kind(PREAMBLE/CHAPTER/SECTION/ARTICLE/EXTRA/SUPPLEMENTARY), label(예: 제12조; V1의 `number`를 바꾼 이름), article_no·branch_number, title, chapter, section_name, text(FULLTEXT ngram 인덱스 `ft_clause_text`; 조 제목이 본문 첫 줄에 있어 text 만 찾는다), review_status(UNREVIEWED/REVIEWED), edited, flags |
+| ExpenseReview | id, org_id, decision_id(승인된 결정에서 요청했을 때), item, amount, fund_source, planned_date, note, search_text(실제 쓴 검색어), status, clause_ids(후보 조항 id, 관련도 순), missing_facts(서버 검증을 통과한 "더 필요한 사실"), guidance(검증을 통과한 AI 참고 안내문, 근거 없으면 null), ai_result(JSON: outcome, restrictions(kind·text·clauseIds·quote·related), setAside(재확인에서 따로 둔 승인·증빙), conflicts, droppedCount, droppedNotes, generatedAt — 조항 원문·모델 응답 원문은 저장하지 않음), requested_by, reviewed_by, reviewed_at |
+| ExpenseChecklistItem | 테이블 `expense_checklist_item`: id, review_id, seq, kind(APPROVAL 필요한 승인 / EVIDENCE 필요한 증빙), text, clause_ids(근거 조항, 후보 안에 있는 것만), quote(근거 조항 원문에서 확인된 인용 구절), checked, checked_by, checked_at, version — 서버가 검증을 통과한 AI 항목으로만 만든다. 모델이 직접 만들지 않는다 |
 | Job | id, type(TRANSCRIBE/ANALYZE/EXPENSE), target_id, status, attempts, locked_until, last_error |
 | AuditLog | id, actor_user_id, org_id, action, target_type, target_id, before_json, after_json, at |
 
@@ -81,7 +82,9 @@ Spring Boot 4는 starter가 모듈로 나뉘어 있다. 의존성을 추가할 �
 | Delivery | PENDING → ACCEPTED / CLARIFICATION_REQUESTED(사유 필수) / NOT_APPLICABLE · CLARIFICATION_REQUESTED → PENDING(발신 답변) / ACCEPTED · ACCEPTED → IN_PROGRESS → SUBMITTED → DONE(확정) / IN_PROGRESS(반려) · 알림(INFORM)은 수락하면 DONE · 끝나지 않은 전달 → CANCELLED(발신) | 수락·확인 요청·해당 없음·담당 지정: 받은 그룹 회장 / 시작·제출: 받은 그룹 회장 + 담당 부서 부장 / 답변·기한·취소·확정·반려: 보낸 그룹 회장 |
 | TaskItem | 완료 체크 done true ⇄ false (상태 전이 없음). 담당 부서가 정해진, 끝나지 않은 승인 업무에서만 | 만들기·내용·맡길 사람·지우기: 회장 또는 담당 부서 부장 / 완료 체크: 맡은 사람 본인 또는 그 사람들 |
 | JoinRequest | PENDING → APPROVED(역할·부서를 정해 승인) / REJECTED(사유 선택) · APPROVED·REJECTED → PENDING(다시 신청) | 신청: 본인 / 승인·거절: 그 그룹 회장 |
-| ExpenseReview | PROCEDURE_FOUND / NEEDS_CHECK / POSSIBLE_CONFLICT → REVIEWED | AI 제안 후 회장(재정부 부장이 어디까지 할지는 단계 4에서 정한다) |
+| RuleDocument | DRAFT → CONFIRMED(시행일·버전 입력 + 모든 조·보칙·부칙이 REVIEWED일 때만) → RETIRED · 확정·폐기한 문서는 고치지 않음 | 그 그룹 회장 |
+| ExpenseReview | (요청) → CANDIDATES_FOUND(확정 규정에서 후보 조항을 찾음, EXPENSE 작업 생성) / NEEDS_CHECK(후보 없음·확정 규정 없음, 작업 없음) · CANDIDATES_FOUND → (AI 안내 + 서버 검증) POSSIBLY_RESTRICTED(이 지출과 직접 관련 있어 보이는 금지 조항이 남음) / POSSIBLE_CONFLICT(충돌 가능성이 남음) / PROCEDURE_FOUND(승인·증빙 또는 한도가 남음) / NEEDS_CHECK(검증을 통과한 것이 없음). 우선순위는 이 순서이고, 안내를 다시 받으면 서로 바뀔 수 있음 · AI 안내가 끝난 뒤(CANDIDATES_FOUND 아님) → REVIEWED(한 번만, 이후 체크리스트·다시 받기 모두 409). "문제없음" 상태는 없다. POSSIBLY_RESTRICTED 는 "절차가 있다"가 아니라 "금지일 수 있으니 원문을 확인하라"는 뜻이다. 작업이 실패하면 상태는 그대로 두고 후보 조항을 계속 보여 준다. 사람이 먼저 REVIEWED 로 바꿨으면 늦게 온 AI 결과로 덮어쓰지 않는다 | 요청·AI 안내 다시 받기·체크리스트 체크: 회장·부장급(후보 검색은 AI 없이 서버가 함) / 검토 완료: 회장(재정부 부장이 어디까지 할지는 정해지지 않음. 권한 판단은 `ExpenseReviewPolicy` 한 곳에 모아 둠) / 서비스 관리자는 읽기 전용 |
+| ExpenseChecklistItem | checked true ⇄ false (상태 전이 없음). 다시 받은 AI 안내에 같은 항목이 있으면 체크가 이어진다. 검토 완료 뒤에는 잠긴다 | 회장·부장급 |
 | Job | QUEUED → RUNNING → SUCCEEDED / FAILED / FAILED_UNKNOWN · RUNNING → QUEUED(일시 오류 재시도) · 임대 만료된 RUNNING → RUNNING(다른 Worker가 다시 가져감) | Worker |
 
 - 허용되지 않은 전이는 409. 전이 규칙은 한 곳(상태 enum 또는 전이 표)에 모으고 테스트로 전부 덮는다(`StatusTransitionTest`).
@@ -125,7 +128,23 @@ PATCH  /api/deliveries/{id}                  수락·확인 요청·해당 없�
 POST   /api/deliveries/{id}/submissions      결과 제출
 POST   /api/submissions/{id}/review          보낸 그룹 회장의 완료 확정/반려
 GET    /api/decisions/{id}/delivery-summary  대상별 상태 집계
-POST   /api/expense-reviews                  지출 절차 안내 요청 → { jobId }
+POST   /api/orgs/{id}/rule-documents         규정 올리기(multipart) → "제n조" 분리 결과(DRAFT) (회장)
+GET    /api/orgs/{id}/rule-documents         규정 목록·검수 진행 상황
+GET    /api/rule-documents/{id}              규정과 조항 전체
+PATCH  /api/rule-documents/{id}              발행 주체·시행일·버전·메모 (회장, If-Match, DRAFT만)
+POST   /api/rule-documents/{id}/clauses      조항 직접 추가 (회장, DRAFT만)
+POST   /api/rule-documents/{id}/clauses/review  고른 조항 검수 완료 { clauseIds } (회장)
+PATCH  /api/clauses/{id}                     조항 수정·검수 표시 (회장, If-Match, DRAFT만)
+DELETE /api/clauses/{id}                     조항 삭제 (회장, DRAFT만)
+POST   /api/rule-documents/{id}/confirm      확정 (회장, If-Match)
+POST   /api/rule-documents/{id}/retire       폐기 (회장, If-Match)
+DELETE /api/rule-documents/{id}              확정 전 규정 삭제 (회장)
+POST   /api/expense-reviews                  지출 절차 확인 요청 { orgId, decisionId?, item?, amount?, fundSource?, plannedDate?, note?, keywords? } (회장·부장급) → 후보 조항이 든 결과를 바로 돌려주고, 후보가 있으면 EXPENSE 작업(target_id=review id)을 만든다(`job` 에 담김). 후보가 없으면 작업·AI 호출 없이 NEEDS_CHECK
+GET    /api/orgs/{id}/expense-reviews        지출 검토 목록
+GET    /api/expense-reviews/{id}             후보 조항 원문(DB 값 그대로)·알림·검증된 AI 안내(guidance)·체크리스트(checklist)·최근 작업(job)·고정 안내문(disclaimer)
+POST   /api/expense-reviews/{id}/guidance    AI 안내 다시 받기(회장·부장급) → 202 + 작업. 대기·진행 중이면 그 작업을 돌려줌. 검토 완료·후보 없음은 409
+POST   /api/expense-reviews/{id}/review      검토 완료(회장, If-Match). AI 안내가 끝난 뒤 한 번만. "규정에 맞다"가 아니라 "사람이 안내와 조항 원문을 확인했다"는 뜻
+PATCH  /api/expense-review-items/{id}        체크리스트 체크/해제 { checked } (회장·부장급, If-Match). 검토 완료 뒤에는 409
 GET    /api/orgs/{id}/members                구성원 목록
 POST   /api/orgs/{id}/members                구성원 초대(회장) { loginId, name, initialPassword, positionId, departmentId }
 PATCH  /api/memberships/{id}                 직책·부서 변경(회장, If-Match) { positionId?, departmentId? }
@@ -187,6 +206,38 @@ POST   /api/join-requests/{id}/reject        거절 { reason? } (회장, If-Matc
 - "~하면 좋겠다", "다음에 다시 얘기하자" 같은 보류·조건부 발언은 CONFIRMED로 올리지 않는다.
 - 긴 회의는 발언 ID를 유지한 구간으로 나누어 분석하고, 병합할 때 같은 결정의 중복을 합친다.
 - JSON 형식 검증(스키마)과 의미 검증(ID 존재, 날짜 형식, 등록된 부서명 매칭)을 따로 한다.
+
+### 지출 절차 안내(EXPENSE 작업)
+
+스키마는 `src/main/resources/ai/expense-guidance-schema.json`, 지시문은 `expense-guidance-system.txt`. 모델은 후보 조항의 이름과 안내문만 낸다. 조항 원문은 쓰지 않는다.
+
+```json
+{
+  "required_approvals": [{ "text": "string", "clause_ids": ["C1"], "quote": "근거 조항 원문에서 옮긴 구절" }],
+  "required_evidence":  [{ "text": "string", "clause_ids": ["C2"], "quote": "string" }],
+  "restrictions":       [{ "kind": "PROHIBITED | LIMITED", "text": "string", "clause_ids": ["C3"], "quote": "string" }],
+  "conflicts":          [{ "description": "string", "clause_ids": ["C1", "C3"] }],
+  "missing_facts": ["string"],
+  "guidance": "string"
+}
+```
+
+- 지출 정보는 `<지출정보>`, 후보 조항은 `<규정>` 안에 `[C1]`, `[C2]`… 이름으로 넣는다. DB 의 조항 id 는 모델에게 주지 않는다. 데이터 안의 구분자·`[C숫자]` 표시는 모양을 바꿔 블록을 빠져나가지 못하게 한다. 조항이 길면 `app.expense.clause-max-chars`(기본 1500자)로 잘라 보내고, 인용 검증은 실제로 보낸 글만 기준으로 한다.
+- 형식이 틀리면 정확히 한 번만 다시 요청하고, 처리 여부를 알 수 없는 시간 초과는 `FAILED_UNKNOWN` 으로 남긴다(회의 분석과 같은 규칙). `restrictions` 가 빠져 있으면 없는 것으로 본다.
+- 서버 의미 검증(`ExpenseGuidanceValidator`):
+  - 조항 이름이 후보 목록에 있어야 한다(없거나 비어 있으면 그 항목을 버림).
+  - `quote` 는 `QuoteMatcher` 규칙으로 확인한다. 인용을 문장 끝·번호 머리·동그라미 숫자·말줄임표에서 **조각**으로 나누고, 모든 조각이 근거 조항 원문에 **순서대로 그대로** 있어야 한다. 비교는 글자·숫자만 남기고(공백·따옴표·문장부호·동그라미 숫자 차이 무시, NFC) 조각 합계가 4자 이상이어야 한다. 실제 규정으로 평가해 보니 모델이 목록 조항의 머리 문장과 호를 이어 붙여 인용했기 때문이다. 이어 붙인 서로 다른 문장을 순서만 지켜 이은 것은 막지 못한다.
+  - 충돌은 서로 다른 후보 조항 둘 이상을 가리켜야 한다. "문제없음·승인 불필요·통과" 같은 판정 표현이 든 글은 버린다.
+  - 승인·증빙으로 분류됐지만 인용 구절 자체가 금지·제한만 말하면(승인·확인·제출 낱말이 없음) 서버가 인용 구절을 문구로 써서 금지·제한으로 옮긴다.
+  - 금지 표현이 있는 조항을 근거로 들었는데 인용 구절에 승인(증빙)을 말하는 낱말이 없는 항목은 버린다. 금지 조항의 호만 떼어 "결재가 필요하다"로 뒤집는 경우를 막는다.
+  - 금지·제한(`restrictions`)이 지출 항목과 직접 관련 있어 보이는지(`related`)를 글자 조각 비교로 가린다(흔한 조각 제외). 관련 없어 보여도 지우지 않고 따로 표시한다. 배지는 관련 있는 PROHIBITED 에만 쓴다. 이 검사는 의미를 이해하지 못하므로 관련 있는 금지를 놓칠 수 있다.
+  - 걸러내거나 조정한 개수와 이유는 `ai_result` 에 남겨 화면에 알린다.
+- 적용 재확인(`ExpenseApplicabilityChecker`, 설정 `app.expense.applicability-check` 기본 켜짐): 서버 검증을 통과한 승인·증빙·금지 항목마다 모델에게 "근거 조항이 이 지출에 해당하는가(applies), 항목 문구가 인용과 맞는가(quote_supports)"를 YES/NO/UNSURE 로 한 번 더 묻는다(스키마 `expense-applicability-schema.json`). NO 로 답한 승인·증빙은 체크리스트에서 빼 `ai_result.setAside`(kind·text·clauseIds·quote·reason NOT_APPLICABLE/QUOTE_MISMATCH)로 따로 두고 화면에서 접어 보여 준다. 금지·제한은 applies 가 YES/NO 면 `related` 를 그에 맞춘다(글자 비교는 UNSURE·답 없음일 때만). 지우는 것은 없고, 바뀐 것이 있으면 모델이 쓴 요약 안내문은 표시하지 않는다. 이 호출이 실패해도 작업은 성공하며 "다시 확인하지 못했다"고 알린다(한도 초과 같은 RETRYABLE 은 5초 간격으로 3번까지 다시 시도, 처리 여부를 모르는 실패는 다시 부르지 않음). 같은 모델의 판단이라 틀릴 수 있다.
+- 조항 원문을 문단(①, "1. ")으로 나눠 지출 항목과 글자가 겹치는 문단(`ClauseParagraphs`, 흔한 조각 제외, 최대 3개)을 후보 카드에 `matchedParagraphs` 로 보여 주고 프롬프트에도 알린다. DB 원문을 자른 것이다.
+- 근거 조항 글에 금지·제한 표현이 있으면(`mentionsRestriction`, 서버의 낱말 검사) 후보 카드와 승인·증빙 항목에 알림을 붙인다.
+- 결과: 관련 있는 금지가 남으면 POSSIBLY_RESTRICTED, 충돌이 남으면 POSSIBLE_CONFLICT, 승인·증빙·한도가 남으면 PROCEDURE_FOUND, 아무것도 안 남으면 NEEDS_CHECK. 근거 없이 남은 안내문은 버린다.
+- fake-ai 프로필은 후보 첫 조항의 첫 줄을 인용하는 고정 응답을 주며 "(가짜 AI)" 표시가 붙는다.
+- 후보 검색에서 금액이 있으면 "30만원"처럼 규정에 쓰이는 표기(`SearchTerms.amountTerms`)로도 찾되, 항목으로 찾은 조항 뒤에만 덧붙여(최대 3개) 금액만 언급한 조항이 위로 올라오지 않게 한다. 후보 순위는 MySQL FULLTEXT 점수라 DB 에 다른 규정이 많아지면 경계(10위 근처)의 조항이 빠질 수 있다.
 
 ## 작업 방식
 

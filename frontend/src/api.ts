@@ -217,6 +217,8 @@ export interface DecisionOption {
   summary: string
   meetingId: number
   meetingTitle: string
+  /** 회의에서 돈을 쓰기로 한 언급이 있을 때만. 지출 절차 확인 값을 미리 채우는 데 쓴다. */
+  expenseProposal: { item: string; amount: number | null; fundSource: string | null } | null
 }
 
 export interface NewTask {
@@ -428,6 +430,198 @@ export interface TaskPatch {
   status?: TaskStatus
 }
 
+// ---- 규정 등록·검수·확정 ----
+
+export type RuleDocStatus = 'DRAFT' | 'CONFIRMED' | 'RETIRED'
+export type ClauseKind = 'PREAMBLE' | 'CHAPTER' | 'SECTION' | 'ARTICLE' | 'EXTRA' | 'SUPPLEMENTARY'
+export type ClauseReviewStatus = 'UNREVIEWED' | 'REVIEWED'
+
+export interface RuleDocSummary {
+  id: number
+  title: string
+  sourceType: 'REGULATION'
+  issuer: string
+  effectiveDate: string | null
+  docVersion: string | null
+  status: RuleDocStatus
+  articleCount: number
+  /** 아직 검수하지 않은 조·보칙·부칙 수 */
+  unreviewedCount: number
+  roundtripOk: boolean
+  version: number
+}
+
+export interface ClauseView {
+  id: number
+  seq: number
+  kind: ClauseKind
+  label: string
+  number: number | null
+  branchNumber: number | null
+  title: string | null
+  chapter: string | null
+  section: string | null
+  text: string
+  reviewStatus: ClauseReviewStatus
+  edited: boolean
+  flags: string[]
+  version: number
+}
+
+export interface RuleDocDetail {
+  summary: RuleDocSummary
+  appliesTo: string | null
+  notes: string | null
+  fileName: string | null
+  sourceSha256: string | null
+  reviewedBy: number | null
+  reviewedAt: string | null
+  registrationWarnings: string[]
+  clauses: ClauseView[]
+}
+
+export interface RuleDocInput {
+  title: string
+  issuer: string
+  appliesTo: string
+  effectiveDate: string
+  docVersion: string
+  notes: string
+  bodyStartLine: string
+  file: File | null
+  text: string
+}
+
+
+// ---- 지출 절차 검토 ----
+
+export type ExpenseReviewStatus =
+  | 'CANDIDATES_FOUND' | 'NEEDS_CHECK' | 'PROCEDURE_FOUND' | 'POSSIBLE_CONFLICT' | 'POSSIBLY_RESTRICTED' | 'REVIEWED'
+
+export interface ExpenseCandidate {
+  clauseId: number
+  rank: number
+  label: string
+  title: string | null
+  /** 검수된 조항 원문(서버가 DB 의 값을 그대로 보냄) */
+  text: string
+  docId: number
+  docTitle: string
+  docVersion: string | null
+  docEffectiveDate: string | null
+  docStatus: RuleDocStatus
+  /** 이 조항 글에 금지·제한 표현이 있다(서버의 낱말 검사) */
+  mentionsRestriction: boolean
+  /** 조항 원문에서 지출 항목과 글자가 겹치는 문단(원문을 자른 것). 말이 달라 겹치지 않으면 비어 있다 */
+  matchedParagraphs: string[]
+}
+
+/** 근거 조항으로 연결하기 위한 짧은 참조(조항 원문은 candidates 에서 읽는다) */
+export interface ExpenseClauseRef {
+  clauseId: number
+  label: string
+  docTitle: string
+  /** 근거 조항 글에 금지·제한 표현이 있다 */
+  mentionsRestriction: boolean
+}
+
+/** 사용을 금지(PROHIBITED)하거나 한도·조건을 두는(LIMITED) 조항 내용. quote 는 원문에서 확인된 구절 */
+export interface ExpenseRestriction {
+  kind: 'PROHIBITED' | 'LIMITED'
+  text: string
+  clauses: ExpenseClauseRef[]
+  quote: string
+  /** 지출 항목과 직접 관련 있어 보이는가(서버의 글자 조각 비교). 관련 없어 보여도 지우지 않는다. */
+  related: boolean
+}
+
+/** 필요한 승인(APPROVAL) 또는 필요한 증빙(EVIDENCE). 서버가 인용 구절을 조항 원문에서 확인한 것만 온다. */
+export interface ExpenseChecklistItem {
+  id: number
+  kind: 'APPROVAL' | 'EVIDENCE'
+  text: string
+  clauses: ExpenseClauseRef[]
+  /** 근거 조항 원문에서 확인된 인용 구절 */
+  quote: string
+  checked: boolean
+  checkedAt: string | null
+  version: number
+}
+
+/** AI 재확인에서 이 지출에 해당하지 않거나 인용과 맞지 않는다고 본 승인·증빙. 체크리스트 밖에 따로 보인다. */
+export interface ExpenseSetAside {
+  kind: 'APPROVAL' | 'EVIDENCE'
+  text: string
+  clauses: ExpenseClauseRef[]
+  quote: string
+  reason: 'NOT_APPLICABLE' | 'QUOTE_MISMATCH'
+}
+
+export interface ExpenseConflict {
+  description: string
+  clauses: ExpenseClauseRef[]
+}
+
+/** 서버 검증을 통과한 AI 안내. note 는 조항으로 확인된 내용이 아니라 참고용이다. */
+export interface ExpenseGuidance {
+  outcome: 'PROCEDURE_FOUND' | 'POSSIBLE_CONFLICT' | 'POSSIBLY_RESTRICTED' | 'NEEDS_CHECK'
+  restrictions: ExpenseRestriction[]
+  conflicts: ExpenseConflict[]
+  setAside: ExpenseSetAside[]
+  missingFacts: string[]
+  note: string | null
+  /** 서버 검증에서 걸러낸 항목 수 */
+  droppedCount: number
+  droppedNotes: string[]
+  generatedAt: string
+}
+
+export interface ExpenseReviewView {
+  id: number
+  orgId: number
+  decisionId: number | null
+  item: string
+  amount: number | null
+  fundSource: string | null
+  plannedDate: string | null
+  note: string | null
+  searchText: string | null
+  status: ExpenseReviewStatus
+  candidates: ExpenseCandidate[]
+  /** 결과를 읽을 때 놓치면 안 되는 점 */
+  notices: string[]
+  /** AI 안내를 아직 못 받았거나 실패했으면 null */
+  guidance: ExpenseGuidance | null
+  checklist: ExpenseChecklistItem[]
+  /** 가장 최근 AI 안내 작업(없으면 null). status 와 lastError 로 진행·실패를 보여 준다. */
+  job: Job | null
+  /** 서버가 항상 붙이는 고정 안내문 */
+  disclaimer: string
+  reviewedAt: string | null
+  createdAt: string
+  version: number
+}
+
+export interface ExpenseReviewSummary {
+  id: number
+  item: string
+  amount: number | null
+  status: ExpenseReviewStatus
+  candidateCount: number
+  createdAt: string
+}
+
+export interface ExpenseReviewInput {
+  orgId: number
+  decisionId?: number
+  item: string
+  amount?: number
+  fundSource?: string
+  plannedDate?: string
+  note?: string
+  keywords?: string
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<TokenResponse>('POST', '/api/auth/login', { email, password }),
@@ -519,4 +713,49 @@ export const api = {
     request<DeliveryView>('POST', `/api/deliveries/${deliveryId}/submissions`, input),
   reviewSubmission: (submissionId: number, approve: boolean, comment: string) =>
     request<DeliveryView>('POST', `/api/submissions/${submissionId}/review`, { approve, comment }),
+
+  ruleDocuments: (orgId: number) => request<RuleDocSummary[]>('GET', `/api/orgs/${orgId}/rule-documents`),
+  ruleDocument: (docId: number) => request<RuleDocDetail>('GET', `/api/rule-documents/${docId}`),
+  registerRuleDocument: (orgId: number, input: RuleDocInput) => {
+    const form = new FormData()
+    form.append('title', input.title)
+    form.append('issuer', input.issuer)
+    if (input.appliesTo) form.append('appliesTo', input.appliesTo)
+    if (input.effectiveDate) form.append('effectiveDate', input.effectiveDate)
+    if (input.docVersion) form.append('docVersion', input.docVersion)
+    if (input.notes) form.append('notes', input.notes)
+    if (input.bodyStartLine) form.append('bodyStartLine', input.bodyStartLine)
+    if (input.file) form.append('file', input.file)
+    else form.append('text', input.text)
+    return request<RuleDocDetail>('POST', `/api/orgs/${orgId}/rule-documents`, form)
+  },
+  updateRuleDocument: (
+    doc: { id: number; version: number },
+    change: { title?: string; issuer?: string; appliesTo?: string; effectiveDate?: string; docVersion?: string; notes?: string },
+  ) => request<RuleDocSummary>('PATCH', `/api/rule-documents/${doc.id}`, change, doc.version),
+  confirmRuleDocument: (doc: { id: number; version: number }) =>
+    request<RuleDocSummary>('POST', `/api/rule-documents/${doc.id}/confirm`, undefined, doc.version),
+  retireRuleDocument: (doc: { id: number; version: number }) =>
+    request<RuleDocSummary>('POST', `/api/rule-documents/${doc.id}/retire`, undefined, doc.version),
+  deleteRuleDocument: (docId: number) => request<void>('DELETE', `/api/rule-documents/${docId}`),
+  updateClause: (
+    clause: { id: number; version: number },
+    change: { label?: string; title?: string; text?: string; reviewed?: boolean },
+  ) => request<ClauseView>('PATCH', `/api/clauses/${clause.id}`, change, clause.version),
+  addClause: (docId: number, input: { afterClauseId?: number; kind?: ClauseKind; label: string; title?: string; text: string }) =>
+    request<ClauseView>('POST', `/api/rule-documents/${docId}/clauses`, input),
+  deleteClause: (clauseId: number) => request<void>('DELETE', `/api/clauses/${clauseId}`),
+  reviewClauses: (docId: number, clauseIds: number[]) =>
+    request<{ reviewed: number }>('POST', `/api/rule-documents/${docId}/clauses/review`, { clauseIds }),
+
+  expenseReviews: (orgId: number) => request<ExpenseReviewSummary[]>('GET', `/api/orgs/${orgId}/expense-reviews`),
+  expenseReview: (reviewId: number) => request<ExpenseReviewView>('GET', `/api/expense-reviews/${reviewId}`),
+  createExpenseReview: (input: ExpenseReviewInput) => request<ExpenseReviewView>('POST', '/api/expense-reviews', input),
+  /** AI 안내 다시 받기. 이미 대기·진행 중이면 그 작업이 돌아온다. */
+  requestExpenseGuidance: (reviewId: number) => request<Job>('POST', `/api/expense-reviews/${reviewId}/guidance`),
+  /** 검토 완료(회장). "규정에 맞다"는 뜻이 아니라 안내와 조항 원문을 확인했다는 표시다. */
+  completeExpenseReview: (review: { id: number; version: number }) =>
+    request<ExpenseReviewView>('POST', `/api/expense-reviews/${review.id}/review`, undefined, review.version),
+  checkExpenseItem: (item: { id: number; version: number }, checked: boolean) =>
+    request<ExpenseChecklistItem>('PATCH', `/api/expense-review-items/${item.id}`, { checked }, item.version),
 }

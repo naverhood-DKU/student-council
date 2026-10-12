@@ -60,8 +60,12 @@ public class DecisionService {
     public record EditDecision(@Size(max = 300) String agenda, @Size(max = 2000) String summary) {
     }
 
-    /** 업무 추가 화면에서 고를 결정(승인된 것만) */
-    public record DecisionOption(long id, String agenda, String summary, long meetingId, String meetingTitle) {
+    /**
+     * 업무 추가·지출 절차 확인 화면에서 고를 결정(승인된 것만).
+     * expenseProposal 은 회의에서 돈을 쓰기로 한 언급이 있을 때만 있다(지출 절차 확인 값을 미리 채우는 데 쓴다).
+     */
+    public record DecisionOption(long id, String agenda, String summary, long meetingId, String meetingTitle,
+                                 ExpenseProposal expenseProposal) {
     }
 
     @Transactional(readOnly = true)
@@ -69,7 +73,7 @@ public class DecisionService {
         accessGuard.requireMember(user, orgId);
         return decisions.findByOrgAndStatus(orgId, DecisionStatus.APPROVED).stream()
                 .map(d -> new DecisionOption(d.getId(), d.getAgenda(), d.getSummary(), d.getMeeting().getId(),
-                        d.getMeeting().getTitle()))
+                        d.getMeeting().getTitle(), d.getExpenseProposal()))
                 .toList();
     }
 
