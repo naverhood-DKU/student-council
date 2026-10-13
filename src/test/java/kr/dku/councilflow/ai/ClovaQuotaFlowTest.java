@@ -46,12 +46,15 @@ class ClovaQuotaFlowTest extends IntegrationTest {
         }
     }
 
-    @Test void 대기_중_임대를_갱신하고_이전_Worker는_새_소유권을_덮어쓰지_않는다() throws Exception {
+    @Test void 대기_표시는_임대를_바꾸지_않고_이전_Worker는_새_소유권을_덮어쓰지_않는다() throws Exception {
         MutableClock clock=new MutableClock();StudioQuota quota=gate(clock);
         long meeting=createMeeting("ce",orgId("컴퓨터공학과 학생회"),"회장: 계획을 작성합니다.");
         long id=requestAnalysis("ce",meeting);
         long version=jdbc.queryForObject("SELECT version FROM job WHERE id=?",Long.class,id);
-        jdbc.update("UPDATE job SET status='RUNNING',locked_until=? WHERE id=?",java.sql.Timestamp.from(clock.now.plusSeconds(1)),id);
+        // 호출 예산용 가짜 시계와 소유권 검사에 쓰는 DB 시계는 독립적이다.
+        // 느린 CI에서 설정 시작 시각 + 1초를 쓰면 대기 검증 전에 임대가 만료된다.
+        jdbc.update("UPDATE job SET status='RUNNING',locked_until=TIMESTAMPADD(SECOND,90,UTC_TIMESTAMP(6)) WHERE id=?",id);
+        var originalLease=jdbc.queryForObject("SELECT locked_until FROM job WHERE id=?",java.sql.Timestamp.class,id);
         assertThat(quota.reserve(40000,clock.now)).isNull();
         try(var pool=Executors.newSingleThreadExecutor()) {
             var result=pool.submit(()->{
@@ -61,11 +64,24 @@ class ClovaQuotaFlowTest extends IntegrationTest {
             long deadline=System.nanoTime()+Duration.ofSeconds(5).toNanos();
             while(jdbc.queryForObject("SELECT quota_wait_until FROM job WHERE id=?",java.sql.Timestamp.class,id)==null && System.nanoTime()<deadline) Thread.sleep(20);
             assertThat(jdbc.queryForObject("SELECT quota_wait_until FROM job WHERE id=?",java.sql.Timestamp.class,id)).isNotNull();
-            assertThat(jdbc.queryForObject("SELECT locked_until FROM job WHERE id=?",java.sql.Timestamp.class,id).toInstant()).isAfter(clock.now.plusSeconds(500));
+            assertThat(jdbc.queryForObject("SELECT locked_until FROM job WHERE id=?",java.sql.Timestamp.class,id)).isEqualTo(originalLease);
             jdbc.update("UPDATE job SET version=version+1 WHERE id=?",id);
             assertThat(org.assertj.core.api.Assertions.catchThrowable(()->result.get(5,java.util.concurrent.TimeUnit.SECONDS))).hasCauseInstanceOf(StudioException.class);
         }
     }
+    @Test void 만료된_임대는_호출예산_대기에서_되살리지_않는다() throws Exception {
+        MutableClock clock=new MutableClock();StudioQuota quota=gate(clock);
+        long meeting=createMeeting("ce",orgId("컴퓨터공학과 학생회"),"회장: 계획을 작성합니다.");
+        long id=requestAnalysis("ce",meeting);
+        long version=jdbc.queryForObject("SELECT version FROM job WHERE id=?",Long.class,id);
+        jdbc.update("UPDATE job SET status='RUNNING',locked_until=TIMESTAMPADD(SECOND,-1,UTC_TIMESTAMP(6)) WHERE id=?",id);
+        org.slf4j.MDC.put("jobId",String.valueOf(id));org.slf4j.MDC.put("jobVersion",String.valueOf(version));
+        try {
+            assertThat(org.assertj.core.api.Assertions.catchThrowable(()->quota.await(0)))
+                    .isInstanceOf(StudioException.class);
+        } finally {org.slf4j.MDC.clear();}
+    }
+
     @Test void 분석_시간을_한도대기와_외부호출로_구분하고_비밀이나_원문을_로그에_남기지_않는다() throws Exception {
         var appender=new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();appender.list=new java.util.concurrent.CopyOnWriteArrayList<>();appender.start();
         var quotaLogger=(ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger(StudioQuota.class);

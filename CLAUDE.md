@@ -49,9 +49,10 @@ Spring Boot 4는 starter가 모듈로 나뉘어 있다. 의존성을 추가할 �
 - 타임아웃·재시도: 연결/응답 타임아웃을 명시한다. JSON 깨짐은 정확히 1번 재요청. 공급자가 처리했는지 불명확한 실패(타임아웃 후 응답 없음)는 즉시 반복 호출하지 않고 `FAILED_UNKNOWN`으로 남긴다.
 - CLOVA 호출 제한은 MySQL `studio_quota`의 공유 예산으로 제어한다. 동일 메인 계정·모델·이용 목적은 같은 `app.clova.quota.scope`를 사용한다. v3 토큰 계산기에서 입력·스키마를 계산하고 최대 출력과 여유 토큰까지 예약한다. 기본 한도 60회/60,000토큰에 90% 예산을 사용한다. 서비스 키로 바꾸면 응답 헤더의 실제 한도를 확인하고 설정한다.
 - 호출 한도 대기는 일반 실패 3회 예산을 소모하지 않는다. 429에서는 공급자 reset/Retry-After에 따른 공유 냉각 후 같은 구간을 재개한다. 대기에는 상한이 있으며 타임아웃·영구 오류를 단순 대기 안내로 숨기지 않는다.
-- 호출 대기 중에는 `job.quota_wait_until`을 표시하고 소유권 version을 조건으로 임대를 갱신한다. 이 임대·진행 필드 갱신은 version을 올리지 않으며, 최종 결과 저장은 기존 version 소유권 검사를 유지한다. 대기는 DB 트랜잭션 밖에서 한다.
-- Worker 복구 ASG는 `enable_worker_recovery`로 활성화하며 최소·기본·최대 모두 1대다. 기존 standalone Worker는 중지한 뒤 전환하고 동시 poller를 만들지 않는다. VM 장애는 SVR 검사로 교체하며 프로그램 종료는 systemd가 재시작한다. 복구 중 분석 중단·진행 중 작업의 임대 대기·외부 API 재호출 가능성은 별도 한계다.
-- 현재 운영 Worker는 1대다. 다중 Worker에서는 공유 호출 예산 행의 DB 잠금 충돌이 확인되어, 잠금 처리 개선과 동시성 재검증 전에는 Worker를 증설하지 않는다. 이는 처리량 판단과 별개인 안정성 제약이다.
+- 예산 행 초기화를 먼저 커밋한 뒤 예약·피드백·냉각은 별도 짧은 트랜잭션으로 처리한다. 잠금 실패는 최대 3회 새 트랜잭션으로 재시도하며, 예약 커밋 후에만 AI를 호출한다. HTTP·대기는 트랜잭션 밖에 둔다.
+- 호출 대기는 `job.quota_wait_until`로 표시한다. 독립 `JobHeartbeat`가 대기·토큰 계산·AI 요청 전체에서 임대를 갱신한다. 갱신은 행 잠금을 얻은 뒤 DB 현재 시각으로 만료·RUNNING·소유권 version을 확인한다. 만료된 임대는 되살리지 않고, 소유권 상실 후 결과 저장도 최종 행 잠금과 동일 조건으로 거부한다. 설정의 기준은 `WorkerProperties`와 application 설정이다.
+- Worker ASG는 `enable_worker_recovery`로 KR-1, `enable_worker_second_zone`으로 KR-2를 활성화하며 각 그룹 최소·기본·최대는 1대다. 기존 standalone poller는 중지 상태로 유지한다. VM은 SVR로 교체하고 프로그램은 systemd로 재시작한다. 두 Worker는 같은 jar·DB 큐·quota scope를 사용한다.
+- 두 대 유지는 공유 예산 동시성·독립 임대·50건씩 3회·두 존 장애 인계 검증 후 결정한다. 처리량 개선과 장애 대비를 구분하고 외부 API 재호출 가능성은 남긴다. 배포 수·검증 범위·복원 순서는 `docs/infra.md`와 `infra/network/README.md`를 확인한다.
 - 용량을 비교할 때 App 조회와 Worker 분석을 분리한다. App 상한은 `infra/network`의 `ubuntu_app_max_size_by_zone`로 지정하며, 정상 부하와 한 대 장애 조건을 함께 확인한 결과로 결정한다. Worker 처리량과 Worker 한 대 장애의 가용성은 별도로 판단한다.
 
 ## 도메인 모델

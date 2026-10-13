@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * CLOVA Studio 설정. apiKey 는 환경변수 CLOVA_STUDIO_API_KEY 로만 받는다(브라우저로 보내지 않음).
  *
  * @param readTimeout 응답을 기다리는 최대 시간. 넘으면 처리 여부를 모르는 실패(FAILED_UNKNOWN)로 남긴다.
- *                    Worker 임대 시간(app.worker.lease)보다 짧아야 한다.
+ *                    Worker 임대는 독립 심박이 유지하며, 응답 제한과 별개다.
  */
 @ConfigurationProperties("app.clova.studio")
 public record StudioProperties(

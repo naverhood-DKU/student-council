@@ -6,6 +6,12 @@ spring:
   application:
     name: council-flow
   datasource:
+    hikari:
+      connection-timeout: 5000
+      validation-timeout: 3000
+      data-source-properties:
+        connectTimeout: 5000
+        socketTimeout: 5000
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
@@ -53,8 +59,9 @@ app:
     # job 테이블 폴링. worker 프로필(운영)과 local 프로필에서 켠다.
     enabled: false
     poll-interval: 1s
-    # 작업 하나를 붙잡는 최대 시간. AI 응답 타임아웃(240s)보다 길어야 한다.
-    lease: 10m
+    # 심박이 AI 호출 및 한도 대기와 별개로 갱신한다. 만료 임대는 재사용하지 않는다.
+    lease: 90s
+    heartbeat-interval: 15s
     max-attempts: 3
     retry-delay: 30s
   ai:

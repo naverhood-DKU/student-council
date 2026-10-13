@@ -160,3 +160,25 @@ variable "worker_launch_configuration_no" {
     error_message = "Provide a verified Worker launch configuration before enabling recovery."
   }
 }
+
+variable "enable_worker_second_zone" {
+  description = "Opt-in KR-2 fixed Worker for controlled reliability tests; retain only after dual-Worker acceptance."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_worker_second_zone || var.enable_worker_recovery
+    error_message = "Second-zone Worker requires the validated recovery runtime and shared quota configuration."
+  }
+}
+
+variable "enable_db_nacl" {
+  description = "db 서브넷 2개에 전용 nacl 적용. false로 두면 기본 nacl로 돌아감"
+  type        = bool
+  default     = false
+}
+
+variable "https_certificate_no" {
+  description = "lb https 리스너에 쓸 인증서 번호. 비워두면 http만"
+  type        = string
+  default     = ""
+}
