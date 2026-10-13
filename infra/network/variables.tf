@@ -170,3 +170,9 @@ variable "enable_worker_second_zone" {
     error_message = "Second-zone Worker requires the validated recovery runtime and shared quota configuration."
   }
 }
+
+variable "enable_db_nacl" {
+  description = "db 서브넷 2개에 전용 nacl 적용. false로 두면 기본 nacl로 돌아감"
+  type        = bool
+  default     = false
+}

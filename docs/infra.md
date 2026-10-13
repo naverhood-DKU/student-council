@@ -51,7 +51,7 @@ App·Worker는 Ubuntu 24.04, Java 21이다. App과 Worker는 역할을 분리하
 | Worker | Bastion ACG TCP 22 | 관리, HTTP 포트 없음 |
 | DB | App·Worker ACG TCP 3306 및 상품 HA 규칙 | 클라이언트·DB HA |
 
-Private App·Worker는 존별 NAT 경로를 사용하고 DB에는 인터넷 기본 경로를 추가하지 않는다. NACL은 기본 NACL을 유지하며 구체적인 접근 제어는 ACG로 수행한다. NACL은 서브넷, ACG는 서버에 적용한다. [NCP 공식 비교](https://guide.ncloud-docs.com/docs/vpc-nacl-vpc).
+Private App·Worker는 존별 NAT 경로를 사용하고 DB에는 인터넷 기본 경로를 추가하지 않는다. DB 서브넷 2개(db-a, db-b)에는 전용 NACL `council-db-nacl`을 붙였다. 3306은 App·Worker 서브넷 4개만 허용하고 그 외 3306은 DROP한다. DB 서브넷끼리는 HA 복제용으로 열어두고, stateless라 응답용 1024-65535는 허용, 나머지는 마지막에 DROP한다. 나머지 서브넷은 기본 NACL이다. NACL은 서브넷, ACG는 서버에 적용해서 DB는 두 겹으로 막는다. [NCP 공식 비교](https://guide.ncloud-docs.com/docs/vpc-nacl-vpc).
 
 DB 인바운드 검증에서는 Bastion의 출구만 DB 두 주소 TCP 3306으로 잠시 허용했다. 같은 DB가 Bastion 연결은 거부하고 Worker 연결은 허용했으며 DB 규칙은 변경하지 않았다. 임시 출구 규칙은 제거하고 원래 규칙과 일치함을 확인했다. 공개 인터넷에서 사설 IP에 연결할 수 없다는 사실로 이 시험을 대신하지 않았다.
 
@@ -60,7 +60,7 @@ DB 인바운드 검증에서는 Bastion의 출구만 DB 두 주소 TCP 3306으�
 - 무토큰·위조 토큰 401, 다른 조직 조회 403을 확인했다.
 - 존재하는 합성 Storage 객체의 인증 GET 200·익명 GET 403을 확인하고 시험 객체를 삭제했다.
 - 등록된 키의 추적 파일·최근 24시간 로그 노출을 검사했다. 환경 파일은 root 0600, SSH는 공개키만 허용한다.
-- Bastion의 전체 IP SSH 허용 규칙을 발견해 제거하고 허용 관리 접속을 확인했다.
+- 개발 중 편의로 열어둔 Bastion 전체 IP SSH 규칙을 닫고, 관리 IP /32만 남겼다.
 - 관리 경보는 본인 EMAIL만 선택했다. CPU 70% 3분, 메모리 80% 5분, DB 연결 상한 70% 5분이다.
 - 서브 계정 3개를 읽기 점검했다. 두 계정에 관리자·재무 권한이 있고 외부 이미지 공유는 없었다. 권한은 변경하지 않았으며 최소 권한 보완 항목으로 기록했다. MFA는 API에서 확인하지 못했다.
 - 기존 App 확장 CPU 80% 3분·축소 30% 10분 정책과 관리 경보를 분리한다.
