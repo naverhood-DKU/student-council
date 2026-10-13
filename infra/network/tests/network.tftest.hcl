@@ -55,3 +55,32 @@ run "reject_worldwide_ssh" {
   variables { admin_ipv4_cidr = "0.0.0.0/0" }
   expect_failures = [var.admin_ipv4_cidr]
 }
+
+run "db_nacl_only_on_db_subnets" {
+  command = plan
+  variables { enable_db_nacl = true }
+  assert {
+    condition     = length(ncloud_network_acl.db) == 1 && length(ncloud_network_acl_rule.db) == 1
+    error_message = "db nacl 하나만"
+  }
+  assert {
+    condition     = toset([for rule in ncloud_network_acl_rule.db[0].inbound : rule.ip_block if rule.port_range == "3306" && rule.rule_action == "ALLOW"]) == toset(["10.30.10.0/24", "10.30.110.0/24", "10.30.20.0/24", "10.30.120.0/24"])
+    error_message = "3306 허용은 app/worker 서브넷 4개만"
+  }
+  assert {
+    condition     = alltrue([for rule in ncloud_network_acl_rule.db[0].inbound : rule.rule_action == "DROP" if rule.ip_block == "0.0.0.0/0" && rule.port_range == "3306"])
+    error_message = "외부 3306은 drop"
+  }
+  assert {
+    condition     = min([for rule in ncloud_network_acl_rule.db[0].inbound : rule.priority if rule.ip_block == "0.0.0.0/0"]...) > max([for rule in ncloud_network_acl_rule.db[0].inbound : rule.priority if rule.port_range == "3306" && rule.rule_action == "ALLOW"]...)
+    error_message = "허용 규칙이 drop보다 먼저 와야 함"
+  }
+}
+
+run "db_nacl_off_keeps_default" {
+  command = plan
+  assert {
+    condition     = length(ncloud_network_acl.db) == 0
+    error_message = "기본값은 nacl 없음"
+  }
+}
