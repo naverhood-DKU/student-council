@@ -176,3 +176,9 @@ variable "enable_db_nacl" {
   type        = bool
   default     = false
 }
+
+variable "https_certificate_no" {
+  description = "lb https 리스너에 쓸 인증서 번호. 비워두면 http만"
+  type        = string
+  default     = ""
+}

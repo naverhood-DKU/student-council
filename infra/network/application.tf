@@ -100,12 +100,21 @@ resource "ncloud_lb_target_group" "app" {
   }
 }
 
-# HTTP is explicitly approved for synthetic demo data. Add a domain and
-# HTTPS before real-data use; this listener does not claim transport security.
 resource "ncloud_lb_listener" "http" {
   count            = var.enable_application ? 1 : 0
   load_balancer_no = ncloud_lb.council[0].id
   protocol         = "HTTP"
   port             = 80
   target_group_no  = ncloud_lb_target_group.app[0].id
+}
+
+# council.naverhood.cloud 인증서 (certificate manager)
+resource "ncloud_lb_listener" "https" {
+  count                = var.enable_application && var.https_certificate_no != "" ? 1 : 0
+  load_balancer_no     = ncloud_lb.council[0].id
+  protocol             = "HTTPS"
+  port                 = 443
+  target_group_no      = ncloud_lb_target_group.app[0].id
+  ssl_certificate_no   = var.https_certificate_no
+  tls_min_version_type = "TLSV12"
 }
