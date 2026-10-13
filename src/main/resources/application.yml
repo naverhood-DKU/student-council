@@ -29,7 +29,7 @@ spring:
     locations: classpath:db/migration
   servlet:
     multipart:
-      # PDF 회의록 업로드 한도
+      # PDF 회의록·규정 업로드 한도
       max-file-size: 10MB
       max-request-size: 11MB
 

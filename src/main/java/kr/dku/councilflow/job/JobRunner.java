@@ -53,7 +53,9 @@ public class JobRunner {
             return false;
         }
         if (!claim.exhausted()) {
-            process(claim);
+            try (var renewal = heartbeat.start(claim.jobId(), claim.version())) {
+                process(claim);
+            }
         }
         return true;
     }
