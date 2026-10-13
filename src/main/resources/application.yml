@@ -76,3 +76,7 @@ logging:
   # 모든 로그 줄에 requestId(API)와 jobId(작업)를 붙인다. 회의 원문·키는 로그에 남기지 않는다.
   pattern:
     level: "%5p [rid:%X{requestId:-} job:%X{jobId:-}]"
+
+  app:
+  ai:
+    mode: fake
