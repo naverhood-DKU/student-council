@@ -93,6 +93,12 @@
             <artifactId>testcontainers-mysql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- NCP Object Storage (S3 호환) SDK -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-s3</artifactId>
+            <version>1.12.772</version>
+        </dependency>
     </dependencies>
 
     <build>

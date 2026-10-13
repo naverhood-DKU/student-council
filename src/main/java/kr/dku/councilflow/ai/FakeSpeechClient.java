@@ -2,11 +2,12 @@ package kr.dku.councilflow.ai;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.List;
 
 @Component
-@Profile({"local", "test", "fake-ai", "default"})
+@ConditionalOnProperty(name = "app.ai.mode", havingValue = "fake")
 public class FakeSpeechClient implements SpeechClient {
 
     @Override

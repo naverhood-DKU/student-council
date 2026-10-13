@@ -87,13 +87,12 @@ class MeetingController {
             String presignedUploadUrl
     ) {}
 
-    @PostMapping("/meetings/audio-upload-url")
+   @PostMapping("/api/orgs/{orgId}/meetings/audio/upload-url")
     public ResponseEntity<AudioUploadResponse> getAudioUploadUrl(
+            @PathVariable("orgId") Long orgId,
             @RequestBody AudioUploadRequest request,
             CurrentUser user
-    ) 
-
-    {
+    ) {
         // 1. 참석자 녹음 동의 필수 체크
         if (!request.consentConfirmed()) {
             throw new ApiException(ErrorCode.BAD_REQUEST, "참석자 전원의 녹음 동의 확인이 필수입니다.");
@@ -121,10 +120,13 @@ class MeetingController {
         // 5. 회의 생성 (소속 확인 및 오디오 회의 등록)
         Instant heldAt = request.heldAt() != null ? request.heldAt() : Instant.now();
         Instant confirmedAt = Instant.now();
-        String confirmedBy = String.valueOf(user.id()); // 또는 user.username() 등 식별자
+        String confirmedBy = String.valueOf(user.id());
+
+        // orgId는 URL의 PathVariable 값을 우선 사용 (request.orgId()가 null인 경우 대비)
+        long targetOrgId = (request.orgId() != null && request.orgId() > 0) ? request.orgId() : orgId;
 
         Meeting savedMeeting = meetingService.createAudioMeeting(
-                request.orgId(),
+                targetOrgId,
                 request.title(),
                 heldAt,
                 objectKey,
@@ -137,8 +139,9 @@ class MeetingController {
                 presignedUrl.toString()
         ));
     }
+    
 
-    @PostMapping("/meetings/{meetingId}/transcribe")
+    @PostMapping("/api/meetings/{meetingId}/transcribe")
     public ResponseEntity<JobView> requestTranscription(
             @PathVariable long meetingId,
             CurrentUser user
@@ -171,5 +174,23 @@ class MeetingController {
     ) {
         meetingService.fallbackToTextInput(user, meetingId, request.rawText());
         return ResponseEntity.noContent().build();
+    }
+
+    public record TranscribeStatusResponse(String status, String transcriptText, String error) {}
+
+    @GetMapping("/api/meetings/{meetingId}/transcribe/status")
+    public ResponseEntity<TranscribeStatusResponse> getTranscribeStatus(
+            @PathVariable long meetingId,
+            CurrentUser user
+    ) {
+        var detail = meetingService.get(user, meetingId);
+
+        // 발언 개수(segmentCount)가 0보다 크면 전사 완료!
+        if (detail.segmentCount() > 0) {
+            return ResponseEntity.ok(new TranscribeStatusResponse("COMPLETED", null, null));
+        }
+
+        // 아직 0개면 백엔드 Worker가 전사 처리 중인 상태 반환
+        return ResponseEntity.ok(new TranscribeStatusResponse("PROCESSING", null, null));
     }
 }

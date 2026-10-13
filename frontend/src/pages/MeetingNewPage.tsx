@@ -100,6 +100,7 @@ export function MeetingNewPage() {
           heldAt: new Date(heldAt).toISOString(),
           filename: audioFile.name,
           fileSizeBytes: audioFile.size,
+          consentConfirmed: true,
         })
 
         // 2. 스토리지(NCP Object Storage) 직접 업로드

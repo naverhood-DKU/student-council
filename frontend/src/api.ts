@@ -652,7 +652,7 @@ export const api = {
     request<MeetingDetail>('POST', '/api/meetings', input),
 
   // ---- 음성 업로드 및 STT API ----
-  requestAudioUploadUrl: (input: { orgId: number; title: string; heldAt: string; filename: string; fileSizeBytes: number }) =>
+  requestAudioUploadUrl: (input: { orgId: number; title: string; heldAt: string; filename: string; fileSizeBytes: number; consentConfirmed?: boolean }) =>
     request<AudioUploadUrlResponse>('POST', `/api/orgs/${input.orgId}/meetings/audio/upload-url`, input),
   uploadAudioToStorage: async (presignedUrl: string, file: File): Promise<void> => {
     const res = await fetch(presignedUrl, {
