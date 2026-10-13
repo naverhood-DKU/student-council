@@ -91,3 +91,94 @@ variable "app_launch_configuration_no" {
     error_message = "Provide the prepared G3 launch configuration number before enabling Auto Scaling."
   }
 }
+
+variable "enable_ubuntu_migration" {
+  description = "Provision parallel Ubuntu hosts; preserve existing deployment until cutover."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_ubuntu_migration || (var.enable_management && var.enable_application)
+    error_message = "Ubuntu migration requires existing management and application resources."
+  }
+}
+
+variable "enable_ubuntu_app_groups" {
+  description = "Create isolated Ubuntu App groups before retiring previous groups."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_ubuntu_app_groups || (var.enable_autoscaling && var.enable_ubuntu_migration)
+    error_message = "Ubuntu App groups require the prepared migration hosts and launch configuration."
+  }
+}
+
+variable "ubuntu_app_max_size_by_zone" {
+  description = "Ubuntu App ASG limits per zone. Set from capacity and single-App failure measurements; retain one minimum App per zone."
+  type        = map(number)
+  default     = { a = 2, b = 2 }
+  validation {
+    condition     = toset(keys(var.ubuntu_app_max_size_by_zone)) == toset(["a", "b"]) && alltrue([for limit in values(var.ubuntu_app_max_size_by_zone) : limit >= 1 && limit <= 30 && limit == floor(limit)])
+    error_message = "Provide integer limits from 1 to 30 for exactly zones a and b; each zone must retain its minimum App."
+  }
+}
+
+variable "enable_legacy_compute" {
+  description = "Retain Rocky Bastion and bootstrap compute until Ubuntu cutover is verified."
+  type        = bool
+  default     = true
+  validation {
+    condition     = var.enable_legacy_compute || var.enable_ubuntu_migration
+    error_message = "Do not retire legacy management/Worker without Ubuntu replacements."
+  }
+}
+
+variable "enable_legacy_app_groups" {
+  description = "Retain previous mixed-OS ASGs until both isolated Ubuntu groups are healthy."
+  type        = bool
+  default     = true
+  validation {
+    condition     = var.enable_legacy_app_groups || var.enable_ubuntu_app_groups
+    error_message = "Do not retire legacy App groups without isolated Ubuntu replacements."
+  }
+}
+
+variable "enable_worker_recovery" {
+  description = "Fixed one-Worker ASG for VM recovery. Stop the standalone Worker before activation; never enable two active pollers during cutover."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_worker_recovery || var.enable_ubuntu_migration
+    error_message = "Worker recovery requires the prepared Ubuntu runtime."
+  }
+}
+variable "worker_launch_configuration_no" {
+  description = "Prepared private Worker image's G3 launch configuration with tested worker startup."
+  type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_worker_recovery || can(regex("^[0-9]+$", var.worker_launch_configuration_no))
+    error_message = "Provide a verified Worker launch configuration before enabling recovery."
+  }
+}
+
+variable "enable_worker_second_zone" {
+  description = "Opt-in KR-2 fixed Worker for controlled reliability tests; retain only after dual-Worker acceptance."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_worker_second_zone || var.enable_worker_recovery
+    error_message = "Second-zone Worker requires the validated recovery runtime and shared quota configuration."
+  }
+}
+
+variable "enable_db_nacl" {
+  description = "db 서브넷 2개에 전용 nacl 적용. false로 두면 기본 nacl로 돌아감"
+  type        = bool
+  default     = false
+}
+
+variable "https_certificate_no" {
+  description = "lb https 리스너에 쓸 인증서 번호. 비워두면 http만"
+  type        = string
+  default     = ""
+}

@@ -1,6 +1,10 @@
 mock_provider "ncloud" {}
 
 variables {
+  enable_legacy_compute     = true
+  enable_legacy_app_groups  = true
+  enable_ubuntu_app_groups  = false
+  enable_ubuntu_migration   = false
   enable_application        = false
   enable_autoscaling        = false
   admin_ipv4_cidr           = "198.51.100.10/32"
@@ -47,4 +51,22 @@ run "application_requires_management_and_nat" {
     recording_bucket_name = "council-test-recordings"
   }
   expect_failures = [var.enable_application]
+}
+
+run "https_listener_with_certificate" {
+  command = plan
+  variables {
+    enable_application    = true
+    database_password     = "TestPassword12345!"
+    recording_bucket_name = "council-test-recordings"
+    https_certificate_no  = "69225"
+  }
+  assert {
+    condition     = length(ncloud_lb_listener.https) == 1 && ncloud_lb_listener.https[0].port == 443 && ncloud_lb_listener.https[0].protocol == "HTTPS" && ncloud_lb_listener.https[0].tls_min_version_type == "TLSV12"
+    error_message = "443 https, tls1.2 이상"
+  }
+  assert {
+    condition     = length(ncloud_lb_listener.http) == 1
+    error_message = "80은 그대로"
+  }
 }

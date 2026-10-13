@@ -30,7 +30,7 @@ resource "ncloud_subnet" "council" {
   zone           = local.zones[each.value.zone]
   subnet_type    = each.value.type
   usage_type     = each.value.usage
-  network_acl_no = ncloud_vpc.council.default_network_acl_no
+  network_acl_no = var.enable_db_nacl && startswith(each.key, "db_") ? ncloud_network_acl.db[0].id : ncloud_vpc.council.default_network_acl_no
 }
 
 resource "ncloud_nat_gateway" "egress" {

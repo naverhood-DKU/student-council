@@ -1,5 +1,5 @@
 locals {
-  bootstrap_servers = var.enable_application ? {
+  bootstrap_servers = var.enable_application && var.enable_legacy_compute ? {
     app    = { subnet = "app_a", ip = "10.30.10.10", acg = "app", name = "council-app-image" }
     worker = { subnet = "worker_a", ip = "10.30.20.10", acg = "worker", name = "council-worker-a" }
   } : {}
@@ -8,7 +8,7 @@ locals {
 # This init script contains a PUBLIC SSH key only. App/AI credentials are
 # installed through the authenticated management connection after provisioning.
 resource "ncloud_init_script" "compute" {
-  count   = var.enable_application ? 1 : 0
+  count   = var.enable_application && var.enable_legacy_compute ? 1 : 0
   name    = "council-compute-init"
   os_type = "LNX"
   content = templatefile("${path.module}/templates/bastion-init.sh.tftpl", {
@@ -100,12 +100,21 @@ resource "ncloud_lb_target_group" "app" {
   }
 }
 
-# HTTP is explicitly approved for synthetic demo data. Add a domain and
-# HTTPS before real-data use; this listener does not claim transport security.
 resource "ncloud_lb_listener" "http" {
   count            = var.enable_application ? 1 : 0
   load_balancer_no = ncloud_lb.council[0].id
   protocol         = "HTTP"
   port             = 80
   target_group_no  = ncloud_lb_target_group.app[0].id
+}
+
+# council.naverhood.cloud 인증서 (certificate manager)
+resource "ncloud_lb_listener" "https" {
+  count                = var.enable_application && var.https_certificate_no != "" ? 1 : 0
+  load_balancer_no     = ncloud_lb.council[0].id
+  protocol             = "HTTPS"
+  port                 = 443
+  target_group_no      = ncloud_lb_target_group.app[0].id
+  ssl_certificate_no   = var.https_certificate_no
+  tls_min_version_type = "TLSV12"
 }

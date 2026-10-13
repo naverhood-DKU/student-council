@@ -12,7 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
 
 /** Real MySQL and a delayed HTTP response exercise renewal while execute() is blocked. */
-@TestPropertySource(properties = {"app.worker.lease=2s", "app.clova.studio.read-timeout=6s"})
+@TestPropertySource(properties = {"app.worker.lease=2s", "app.worker.heartbeat-interval=500ms", "app.clova.studio.read-timeout=6s"})
 class JobLeaseHeartbeatTest extends IntegrationTest {
     @Autowired JobRunner runner;
     @Autowired JobRepository jobs;

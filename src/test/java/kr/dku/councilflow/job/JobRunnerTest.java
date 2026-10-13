@@ -211,4 +211,20 @@ class JobRunnerTest extends IntegrationTest {
         jdbc.update("UPDATE job SET status = 'RUNNING', attempts = ?,"
                 + " locked_until = UTC_TIMESTAMP(6) - INTERVAL 60 SECOND WHERE id = ?", attempts, jobId);
     }
+
+    @Test
+    void 임대가_만료된_Worker는_늦은_실패도_기록하지_않는다() throws Exception {
+        long id=newAnalysisJob();
+        CLOVA.enqueue(FakeClovaServer.slow(2_500));
+        try(var pool=Executors.newSingleThreadExecutor()) {
+            var result=pool.submit(()->runner.runOnce());
+            long deadline=System.nanoTime()+java.time.Duration.ofSeconds(5).toNanos();
+            while(CLOVA.requests().isEmpty() && System.nanoTime()<deadline) Thread.sleep(10);
+            assertThat(CLOVA.requests()).hasSize(1);
+            jdbc.update("UPDATE job SET locked_until=TIMESTAMPADD(SECOND,-1,UTC_TIMESTAMP(6)) WHERE id=?",id);
+            result.get(5,java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(job(id).getStatus()).isEqualTo(JobStatus.RUNNING);
+            assertThat(meetingStatusOf(id)).isEqualTo(MeetingStatus.ANALYZING);
+        }
+    }
 }

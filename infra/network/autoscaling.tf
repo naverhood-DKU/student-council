@@ -1,5 +1,5 @@
 resource "ncloud_auto_scaling_group" "app" {
-  for_each                     = var.enable_autoscaling ? local.zones : {}
+  for_each                     = var.enable_autoscaling && var.enable_legacy_app_groups ? local.zones : {}
   name                         = "council-app-asg-${each.key}"
   server_name_prefix           = "cfapp-${each.key}"
   subnet_no                    = ncloud_subnet.council["app_${each.key}"].id
@@ -20,7 +20,7 @@ resource "ncloud_auto_scaling_group" "app" {
 }
 
 resource "ncloud_auto_scaling_policy" "scale_out" {
-  for_each              = var.enable_autoscaling ? local.zones : {}
+  for_each              = var.enable_autoscaling && var.enable_legacy_app_groups ? local.zones : {}
   name                  = "council-app-${each.key}-out"
   auto_scaling_group_no = ncloud_auto_scaling_group.app[each.key].id
   adjustment_type_code  = "CHANG"
@@ -29,7 +29,7 @@ resource "ncloud_auto_scaling_policy" "scale_out" {
 }
 
 resource "ncloud_auto_scaling_policy" "scale_in" {
-  for_each              = var.enable_autoscaling ? local.zones : {}
+  for_each              = var.enable_autoscaling && var.enable_legacy_app_groups ? local.zones : {}
   name                  = "council-app-${each.key}-in"
   auto_scaling_group_no = ncloud_auto_scaling_group.app[each.key].id
   adjustment_type_code  = "CHANG"

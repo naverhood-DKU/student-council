@@ -1,0 +1,113 @@
+package kr.dku.councilflow.ai;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import java.time.*;
+import java.util.List;
+import java.util.concurrent.Executors;
+import kr.dku.councilflow.IntegrationTest;
+import kr.dku.councilflow.job.WorkerProperties;
+import kr.dku.councilflow.support.FakeClovaServer;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
+
+class ClovaQuotaFlowTest extends IntegrationTest {
+    @Autowired PlatformTransactionManager manager;
+    @Autowired WorkerProperties worker;
+    static class MutableClock extends Clock {
+        volatile Instant now=Instant.now();
+        public ZoneId getZone(){return ZoneOffset.UTC;}
+        public Clock withZone(ZoneId zone){return this;}
+        public Instant instant(){return now;}
+    }
+    private StudioQuota gate(MutableClock clock) {
+        jdbc.update("DELETE FROM studio_quota");
+        return new StudioQuota(jdbc,manager,new StudioQuotaProperties(true,"flow-test",60,60000,0.9,Duration.ofMinutes(3)),worker,clock);
+    }
+    @Test void 토큰과_스키마를_계산하고_429에서_실패하지_않고_냉각_뒤_같은_호출을_완료한다() throws Exception {
+        MutableClock clock=new MutableClock();StudioQuota quota=gate(clock);
+        var tokenizer=new FakeClovaServer.Reply(200,"""
+                {"status":{"code":"20000"},"result":{"messages":[{"content":{"count":100}}],"responseFormat":{"count":50}}}
+                """,0);
+        CLOVA.enqueue(tokenizer,FakeClovaServer.error(429,"42901"),FakeClovaServer.ok("{\"agendas\":[]}"));
+        var client=new ClovaStudioClient(new StudioProperties(CLOVA.url(),"k","HCX-007",Duration.ofSeconds(1),Duration.ofSeconds(1),8192,0.2),JSON,quota);
+        try(var pool=Executors.newSingleThreadExecutor()) {
+            var result=pool.submit(()->client.chat(new StudioClient.StudioRequest(List.of(StudioClient.Message.user("가상 회의")),JSON.readTree("{\"type\":\"object\"}"))));
+            long deadline=System.nanoTime()+Duration.ofSeconds(5).toNanos();
+            while(jdbc.queryForObject("SELECT COUNT(*) FROM studio_quota WHERE cooldown_until IS NOT NULL",Integer.class)==0 && System.nanoTime()<deadline) Thread.sleep(20);
+            assertThat(CLOVA.requests()).hasSize(2);
+            assertThat(result.isDone()).isFalse();
+            assertThat(CLOVA.requests().get(0).path()).isEqualTo("/v3/api-tools/chat-tokenize/HCX-007");
+            assertThat(CLOVA.requests().get(0).body().has("responseFormat")).isTrue();
+            clock.now=clock.now.plusSeconds(70);
+            assertThat(result.get(5,java.util.concurrent.TimeUnit.SECONDS).content()).isEqualTo("{\"agendas\":[]}");
+            assertThat(CLOVA.requests()).hasSize(3);
+            assertThat(jdbc.queryForObject("SELECT used_tokens FROM studio_quota WHERE scope='flow-test'",Long.class)).isEqualTo(150+8192+128);
+        }
+    }
+
+    @Test void 대기_표시는_임대를_바꾸지_않고_이전_Worker는_새_소유권을_덮어쓰지_않는다() throws Exception {
+        MutableClock clock=new MutableClock();StudioQuota quota=gate(clock);
+        long meeting=createMeeting("ce",orgId("컴퓨터공학과 학생회"),"회장: 계획을 작성합니다.");
+        long id=requestAnalysis("ce",meeting);
+        long version=jdbc.queryForObject("SELECT version FROM job WHERE id=?",Long.class,id);
+        // 호출 예산용 가짜 시계와 소유권 검사에 쓰는 DB 시계는 독립적이다.
+        // 느린 CI에서 설정 시작 시각 + 1초를 쓰면 대기 검증 전에 임대가 만료된다.
+        jdbc.update("UPDATE job SET status='RUNNING',locked_until=TIMESTAMPADD(SECOND,90,UTC_TIMESTAMP(6)) WHERE id=?",id);
+        var originalLease=jdbc.queryForObject("SELECT locked_until FROM job WHERE id=?",java.sql.Timestamp.class,id);
+        assertThat(quota.reserve(40000,clock.now)).isNull();
+        try(var pool=Executors.newSingleThreadExecutor()) {
+            var result=pool.submit(()->{
+                org.slf4j.MDC.put("jobId",String.valueOf(id));org.slf4j.MDC.put("jobVersion",String.valueOf(version));
+                try{quota.await(40000);}finally{org.slf4j.MDC.clear();}
+            });
+            long deadline=System.nanoTime()+Duration.ofSeconds(5).toNanos();
+            while(jdbc.queryForObject("SELECT quota_wait_until FROM job WHERE id=?",java.sql.Timestamp.class,id)==null && System.nanoTime()<deadline) Thread.sleep(20);
+            assertThat(jdbc.queryForObject("SELECT quota_wait_until FROM job WHERE id=?",java.sql.Timestamp.class,id)).isNotNull();
+            assertThat(jdbc.queryForObject("SELECT locked_until FROM job WHERE id=?",java.sql.Timestamp.class,id)).isEqualTo(originalLease);
+            jdbc.update("UPDATE job SET version=version+1 WHERE id=?",id);
+            assertThat(org.assertj.core.api.Assertions.catchThrowable(()->result.get(5,java.util.concurrent.TimeUnit.SECONDS))).hasCauseInstanceOf(StudioException.class);
+        }
+    }
+    @Test void 만료된_임대는_호출예산_대기에서_되살리지_않는다() throws Exception {
+        MutableClock clock=new MutableClock();StudioQuota quota=gate(clock);
+        long meeting=createMeeting("ce",orgId("컴퓨터공학과 학생회"),"회장: 계획을 작성합니다.");
+        long id=requestAnalysis("ce",meeting);
+        long version=jdbc.queryForObject("SELECT version FROM job WHERE id=?",Long.class,id);
+        jdbc.update("UPDATE job SET status='RUNNING',locked_until=TIMESTAMPADD(SECOND,-1,UTC_TIMESTAMP(6)) WHERE id=?",id);
+        org.slf4j.MDC.put("jobId",String.valueOf(id));org.slf4j.MDC.put("jobVersion",String.valueOf(version));
+        try {
+            assertThat(org.assertj.core.api.Assertions.catchThrowable(()->quota.await(0)))
+                    .isInstanceOf(StudioException.class);
+        } finally {org.slf4j.MDC.clear();}
+    }
+
+    @Test void 분석_시간을_한도대기와_외부호출로_구분하고_비밀이나_원문을_로그에_남기지_않는다() throws Exception {
+        var appender=new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();appender.list=new java.util.concurrent.CopyOnWriteArrayList<>();appender.start();
+        var quotaLogger=(ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger(StudioQuota.class);
+        var clientLogger=(ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger(ClovaStudioClient.class);
+        quotaLogger.addAppender(appender);clientLogger.addAppender(appender);
+        try {
+            MutableClock clock=new MutableClock();StudioQuota quota=gate(clock);quota.reserve(50_000,clock.now);
+            CLOVA.enqueue(new FakeClovaServer.Reply(200,"{\"status\":{\"code\":\"20000\"},\"result\":{\"count\":100}}",0),FakeClovaServer.ok("{\"agendas\":[]}"));
+            var client=new ClovaStudioClient(new StudioProperties(CLOVA.url(),"private-test-key", "HCX-007",Duration.ofSeconds(1),Duration.ofSeconds(2),8192,0.2),JSON,quota);
+            try(var pool=Executors.newSingleThreadExecutor()) {
+                var result=pool.submit(()->client.chat(new StudioClient.StudioRequest(List.of(StudioClient.Message.user("private-test-transcript")),JSON.readTree("{\"type\":\"object\"}"))));
+                long deadline=System.nanoTime()+Duration.ofSeconds(5).toNanos();
+                while(appender.list.stream().noneMatch(e->e.getFormattedMessage().contains("studio quota wait tokens=")) && System.nanoTime()<deadline)Thread.sleep(20);
+                clock.now=clock.now.plusSeconds(70);
+                assertThat(result.get(5,java.util.concurrent.TimeUnit.SECONDS).content()).isEqualTo("{\"agendas\":[]}");
+            }
+            quota.feedback(java.net.http.HttpHeaders.of(java.util.Map.of(
+                    "x-ratelimit-limit-requests",List.of("60"),"x-ratelimit-limit-tokens",List.of("60000"),
+                    "x-ratelimit-remaining-requests",List.of("59"),"x-ratelimit-remaining-tokens",List.of("58000"),
+                    "x-ratelimit-reset-tokens",List.of("60.1s")),(name,value)->true),false);
+            var messages=appender.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+            assertThat(messages).anyMatch(x->x.matches("studio http phase=tokenizer status=200 took_ms=[0-9]+"));
+            assertThat(messages).anyMatch(x->x.matches("studio http phase=chat status=200 took_ms=[0-9]+"));
+            assertThat(messages).anyMatch(x->x.matches("studio quota reserved tokens=8420 waited_ms=[1-9][0-9]*"));
+            assertThat(messages).contains("studio quota feedback limit_requests=60 limit_tokens=60000 remaining_requests=59 remaining_tokens=58000 reset_sec=61 limited=false");
+            assertThat(String.join("\n",messages)).doesNotContain("private-test-key","private-test-transcript");
+        } finally {quotaLogger.detachAppender(appender);clientLogger.detachAppender(appender);appender.stop();}
+    }
+}

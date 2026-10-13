@@ -29,15 +29,9 @@ public interface JobRepository extends JpaRepository<Job, Long> {
             """, nativeQuery = true)
     Optional<Long> lockNextClaimableId(Instant now);
 
-    /** Renew only a live claim. Keep version unchanged: it identifies the owning attempt. */
-    @Modifying
-    @Transactional
-    @Query(value = """
-            UPDATE job SET locked_until = :until, updated_at = :now
-             WHERE id = :id AND version = :version AND status = 'RUNNING'
-               AND locked_until > :now
-            """, nativeQuery = true)
-    int renewLease(long id, long version, Instant now, Instant until);
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select j from Job j where j.id = :id")
+    Optional<Job> lockOwnedRow(long id);
 
     Optional<Job> findFirstByTypeAndTargetIdOrderByIdDesc(JobType type, Long targetId);
 
