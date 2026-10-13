@@ -51,7 +51,9 @@ class ClovaQuotaFlowTest extends IntegrationTest {
         long meeting=createMeeting("ce",orgId("컴퓨터공학과 학생회"),"회장: 계획을 작성합니다.");
         long id=requestAnalysis("ce",meeting);
         long version=jdbc.queryForObject("SELECT version FROM job WHERE id=?",Long.class,id);
-        jdbc.update("UPDATE job SET status='RUNNING',locked_until=? WHERE id=?",java.sql.Timestamp.from(clock.now.plusSeconds(1)),id);
+        // 호출 예산용 가짜 시계와 소유권 검사에 쓰는 DB 시계는 독립적이다.
+        // 느린 CI에서 설정 시작 시각 + 1초를 쓰면 대기 검증 전에 임대가 만료된다.
+        jdbc.update("UPDATE job SET status='RUNNING',locked_until=TIMESTAMPADD(SECOND,90,UTC_TIMESTAMP(6)) WHERE id=?",id);
         var originalLease=jdbc.queryForObject("SELECT locked_until FROM job WHERE id=?",java.sql.Timestamp.class,id);
         assertThat(quota.reserve(40000,clock.now)).isNull();
         try(var pool=Executors.newSingleThreadExecutor()) {
