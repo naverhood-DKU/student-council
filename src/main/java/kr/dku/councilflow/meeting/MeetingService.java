@@ -14,6 +14,7 @@ import kr.dku.councilflow.common.error.ApiException;
 import kr.dku.councilflow.common.error.ErrorCode;
 import kr.dku.councilflow.decision.DecisionRepository;
 import kr.dku.councilflow.decision.DecisionStatus;
+import kr.dku.councilflow.decision.DecisionViews;
 import kr.dku.councilflow.job.Job;
 import kr.dku.councilflow.job.JobRepository;
 import kr.dku.councilflow.job.JobStatus;
@@ -66,7 +67,9 @@ public class MeetingService {
         }
     }
 
-    public record MeetingDetail(MeetingView meeting, long segmentCount, JobView latestJob) {
+    /** segments: 녹음 회의의 전사 대본(화면의 "전사 회의 대본 보기"). 텍스트 회의는 비어 있다. */
+    public record MeetingDetail(MeetingView meeting, long segmentCount, JobView latestJob,
+                                List<DecisionViews.SegmentView> segments) {
     }
 
     /** 텍스트 회의록으로 회의를 만든다. 줄 단위로 발언(Segment)을 나눠 저장한다. */
@@ -90,7 +93,7 @@ public class MeetingService {
         }
         audit.record(user.id(), request.orgId(), "MEETING_CREATED", "MEETING", meeting.getId(), null,
                 Map.of("title", meeting.getTitle(), "segmentCount", lines.size()));
-        return new MeetingDetail(MeetingView.of(meeting), lines.size(), null);
+        return new MeetingDetail(MeetingView.of(meeting), lines.size(), null, List.of());
     }
 
     /**
@@ -112,9 +115,16 @@ public class MeetingService {
     public MeetingDetail get(CurrentUser user, long meetingId) {
         Meeting meeting = loadForMember(user, meetingId);
         long count = segments.countByMeetingIdAndTranscriptVersion(meetingId, meeting.getTranscriptVersion());
-        JobView latest = jobs.findFirstByTypeAndTargetIdOrderByIdDesc(JobType.ANALYZE, meetingId)
+        // 녹음 회의는 전사 작업이 먼저 돈다. 분석·전사 중 나중에 만든 작업을 보여 줘야 진행과 실패 이유가 화면에 나온다.
+        JobView latest = java.util.stream.Stream.of(JobType.ANALYZE, JobType.TRANSCRIBE)
+                .flatMap(type -> jobs.findFirstByTypeAndTargetIdOrderByIdDesc(type, meetingId).stream())
+                .max(java.util.Comparator.comparingLong(Job::getId))
                 .map(JobView::of).orElse(null);
-        return new MeetingDetail(MeetingView.of(meeting), count, latest);
+        List<DecisionViews.SegmentView> transcript = meeting.getSourceType() == SourceType.AUDIO
+                ? segments.findByMeetingIdAndTranscriptVersionOrderBySeq(meetingId, meeting.getTranscriptVersion())
+                        .stream().map(DecisionViews.SegmentView::of).toList()
+                : List.of();
+        return new MeetingDetail(MeetingView.of(meeting), count, latest, transcript);
     }
 
     /**
