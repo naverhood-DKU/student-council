@@ -8,7 +8,7 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <Link to="/orgs" className="brand">결정 추적</Link>
+      <Link to="/orgs" className="brand">part너</Link>
       <div className="topbar-actions">
         {state.status === 'signed-in' && (
           <Link to="/account" className="muted small" title="내 계정·비밀번호">{state.me.name}</Link>

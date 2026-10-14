@@ -14,7 +14,7 @@
     <artifactId>council-flow</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>council-flow</name>
-    <description>학생자치 결정 추적 서비스</description>
+    <description>part너 — 학생자치 결정 추적 서비스</description>
 
     <properties>
         <java.version>21</java.version>

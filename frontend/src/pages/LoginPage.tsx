@@ -30,7 +30,7 @@ export function LoginPage() {
   return (
     <main className="login">
       <div className="login-card">
-        <h1>학생자치 결정 추적</h1>
+        <h1>part너</h1>
         <p className="muted">회의에서 정한 일을 끝까지 챙깁니다.</p>
         {notice && <p className="notice">{notice}</p>}
         <form onSubmit={onSubmit}>
