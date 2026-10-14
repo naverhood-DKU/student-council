@@ -1,6 +1,8 @@
 # 로컬 개발용. docker compose 의 MySQL에 붙는다.
 # 아래 기본값은 모두 로컬 전용이다. 운영 값은 prod 프로필에서 환경변수로만 받는다.
 spring:
+  flyway:
+    validate-on-migrate: false
   config:
     # 저장소 루트의 .env(커밋 안 함)를 읽는다. CLOVA 키, DB 포트 등. 셸 환경변수가 있으면 그쪽이 먼저다.
     import: optional:file:.env[.properties]

@@ -1,5 +1,3 @@
-// 서버 API 호출 모음. 토큰은 탭을 닫으면 사라지는 sessionStorage 에만 둔다.
-
 export type OrgType = 'STUDENT_UNION' | 'COLLEGE' | 'DEPARTMENT'
 /** 그룹 안 역할: 회장 / 부장 / 부원 */
 export type MembershipRole = 'OWNER' | 'EDITOR' | 'VIEWER'
@@ -153,7 +151,6 @@ export interface Job {
   lastError: string | null
   createdAt: string
   updatedAt: string
-  quotaWaitUntil: string | null
 }
 
 export interface MeetingDetail {
@@ -344,6 +341,19 @@ export interface DeliveryPatch {
   dueDate?: string | null
 }
 
+// ---- 음성 녹음 및 STT 타입 ----
+
+export interface AudioUploadUrlResponse {
+  meetingId: number
+  presignedUploadUrl: string
+}
+
+export interface TranscribeStatusResponse {
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  transcriptText?: string
+  error?: string
+}
+
 /** 서버 공통 오류 본문 { code, message, requestId } */
 export class ApiError extends Error {
   readonly status: number
@@ -493,7 +503,6 @@ export interface RuleDocInput {
   text: string
 }
 
-
 // ---- 지출 절차 검토 ----
 
 export type ExpenseReviewStatus =
@@ -641,6 +650,26 @@ export const api = {
   meeting: (meetingId: number) => request<MeetingDetail>('GET', `/api/meetings/${meetingId}`),
   createMeeting: (input: { orgId: number; title: string; heldAt: string; transcript: string }) =>
     request<MeetingDetail>('POST', '/api/meetings', input),
+
+  // ---- 음성 업로드 및 STT API ----
+  requestAudioUploadUrl: (input: { orgId: number; title: string; heldAt: string; filename: string; fileSizeBytes: number; consentConfirmed?: boolean }) =>
+    request<AudioUploadUrlResponse>('POST', `/api/orgs/${input.orgId}/meetings/audio/upload-url`, input),
+  uploadAudioToStorage: async (presignedUrl: string, file: File): Promise<void> => {
+    const res = await fetch(presignedUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
+    })
+    if (!res.ok) throw new ApiError(res.status, 'UPLOAD_FAILED', '스토리지 파일 업로드에 실패했습니다.')
+  },
+  triggerTranscribe: (meetingId: number) =>
+    request<void>('POST', `/api/meetings/${meetingId}/transcribe`),
+  getTranscribeStatus: (meetingId: number) =>
+    request<TranscribeStatusResponse>('GET', `/api/meetings/${meetingId}/transcribe/status`),
+  // ------------------------------
+
   extractPdf: (orgId: number, file: File) => {
     const form = new FormData()
     form.append('orgId', String(orgId))
@@ -752,9 +781,7 @@ export const api = {
   expenseReviews: (orgId: number) => request<ExpenseReviewSummary[]>('GET', `/api/orgs/${orgId}/expense-reviews`),
   expenseReview: (reviewId: number) => request<ExpenseReviewView>('GET', `/api/expense-reviews/${reviewId}`),
   createExpenseReview: (input: ExpenseReviewInput) => request<ExpenseReviewView>('POST', '/api/expense-reviews', input),
-  /** AI 안내 다시 받기. 이미 대기·진행 중이면 그 작업이 돌아온다. */
   requestExpenseGuidance: (reviewId: number) => request<Job>('POST', `/api/expense-reviews/${reviewId}/guidance`),
-  /** 검토 완료(회장). "규정에 맞다"는 뜻이 아니라 안내와 조항 원문을 확인했다는 표시다. */
   completeExpenseReview: (review: { id: number; version: number }) =>
     request<ExpenseReviewView>('POST', `/api/expense-reviews/${review.id}/review`, undefined, review.version),
   checkExpenseItem: (item: { id: number; version: number }, checked: boolean) =>
