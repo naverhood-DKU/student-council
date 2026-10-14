@@ -1,5 +1,5 @@
 import type { Proposals } from '../api'
-import { departmentBranches } from '../meetingBranches'
+import { decisionsWithoutTasks, departmentGroups } from '../meetingBranches'
 import { DECISION_STATUS_LABEL, TASK_STATUS_LABEL } from '../labels'
 
 export type FlowSelection = { kind: 'decision' | 'task'; id: number; segmentIds: number[] } | null
@@ -22,14 +22,17 @@ export function MeetingFlow({ data, selection, onSelect, onOpenTranscript }: {
   const activeTasks = data.decisions.flatMap(d => d.tasks).filter(t => t.status !== 'CANCELLED')
   const departments = new Set(activeTasks.filter(t => t.departmentId !== null).map(t => t.departmentId))
   const isSelected = (kind: 'decision' | 'task', id: number) => selection?.kind === kind && selection.id === id
+  // 결정 순서가 아니라 담당 부서별로 업무를 모은다. 담당이 없는 업무는 "담당 미정" 하나로 맨 끝에 모인다.
+  const groups = departmentGroups(data.decisions, data.departments)
+  const taskless = decisionsWithoutTasks(data.decisions)
 
   return <section className="meeting-map" aria-label="회의에서 부서 업무로 이어지는 흐름">
     <header className="map-heading">
       <div><span className="eyebrow">회의에서 나온 일을 한눈에</span><h3>한 번의 회의, 부서별로 이어지는 업무</h3></div>
-      <span className="map-legend"><i /> 승인 전 후보 <i className="confirmed-dot" /> 승인된 결정</span>
+      <span className="map-legend"><i /> 승인 전 후보 <i className="confirmed-dot" /> 승인된 결정의 업무</span>
     </header>
-    <div className="map-columns" aria-hidden="true"><span>출발점 · 회의록</span><span>회의에서 정한 결정</span><span>담당 부서와 할 일</span></div>
-    <div className="flow-canvas">
+    <div className="map-columns by-department" aria-hidden="true"><span>출발점 · 회의록</span><span>담당 부서별 할 일</span></div>
+    <div className="flow-canvas by-department">
       <div className="flow-source">
         <button type="button" className="source-node" onClick={onOpenTranscript}>
           <span className="node-icon"><FlowIcon kind="meeting" /></span>
@@ -41,33 +44,34 @@ export function MeetingFlow({ data, selection, onSelect, onOpenTranscript }: {
         </button>
         <p className="source-help">결정과 업무를 누르면<br />근거 발언까지 연결됩니다.</p>
       </div>
-      <div className="flow-branches">
+      <div className="flow-branches by-department">
         {data.decisions.length === 0 && <div className="flow-empty"><FlowIcon kind="branch" /><strong>아직 이어진 업무가 없습니다</strong><p>결정사항이 없는 회의일 수 있어요. 원문을 확인하거나 업무를 직접 등록하세요.</p></div>}
-        {data.decisions.map((decision, index) => {
-          const branches = departmentBranches(decision.tasks)
-          return <div className="decision-branch" key={decision.id} style={{ animationDelay: `${Math.min(index, 5) * 70}ms` }}>
-            <button type="button" className={`decision-node ${decision.status === 'APPROVED' ? 'confirmed' : ''} ${isSelected('decision', decision.id) ? 'active-node' : ''}`}
-              onClick={() => onSelect({ kind: 'decision', id: decision.id, segmentIds: decision.sourceSegmentIds })}
-              aria-pressed={isSelected('decision', decision.id)} aria-controls="meeting-inspector">
-              <span className="node-topline"><span className="node-number">{String(index + 1).padStart(2, '0')}</span><span className={`chip status-${decision.status.toLowerCase()}`}>{DECISION_STATUS_LABEL[decision.status]}</span></span>
-              <span className="eyebrow">{decision.agenda}</span><strong>{decision.summary}</strong>
-              <span className="node-foot">{branches.reduce((n, b) => n + b.tasks.length, 0)}개 업무 · 근거 확인 →</span>
-            </button>
-            <div className="department-branches">
-              {branches.length === 0 && <button type="button" className="no-task-node" onClick={() => onSelect({ kind: 'decision', id: decision.id, segmentIds: decision.sourceSegmentIds })}>연결된 업무 없음 · 결정 검토</button>}
-              {branches.map(branch => <div className={`department-node ${branch.departmentId === null ? 'unassigned-node' : ''}`} key={branch.departmentId ?? 'unassigned'}>
-                <div className="department-node-head"><FlowIcon kind="branch" /><strong>{branch.name}</strong><span>{branch.tasks.length}건</span></div>
-                {branch.tasks.map(task => <button type="button" key={task.id} className={`flow-task ${isSelected('task', task.id) ? 'active-node' : ''}`}
-                  aria-pressed={isSelected('task', task.id)} aria-controls="meeting-inspector"
-                  onClick={() => onSelect({ kind: 'task', id: task.id, segmentIds: task.sourceSegmentIds })}>
-                  <strong>{task.title}</strong>
-                  <span className="task-node-meta"><span>{TASK_STATUS_LABEL[task.status]}</span><span>기한 {task.dueDate ?? '미정'}</span></span>
-                  {task.departmentId === null && task.suggestedDepartmentName && <span className="suggested-note">AI 추천: {task.suggestedDepartmentName} · 확인 필요</span>}
-                </button>)}
-              </div>)}
-            </div>
-          </div>
-        })}
+        {groups.map((group, index) => <div className={`department-node ${group.departmentId === null ? 'unassigned-node' : ''}`} key={group.departmentId ?? 'unassigned'}
+          style={{ animationDelay: `${Math.min(index, 5) * 70}ms` }}>
+          <div className="department-node-head"><FlowIcon kind="branch" /><strong>{group.name}</strong><span>{group.tasks.length}건</span></div>
+          {group.departmentId === null && <p className="unassigned-help">담당 부서를 정하지 못한 업무입니다. 눌러서 담당을 지정하세요.</p>}
+          {group.tasks.map(({ task, decision }) => <button type="button" key={task.id}
+            className={`flow-task ${decision.status === 'APPROVED' ? 'confirmed' : ''} ${isSelected('task', task.id) ? 'active-node' : ''}`}
+            aria-pressed={isSelected('task', task.id)} aria-controls="meeting-inspector"
+            onClick={() => onSelect({ kind: 'task', id: task.id, segmentIds: task.sourceSegmentIds })}>
+            <strong>{task.title}</strong>
+            <span className="task-node-meta">
+              <span>{TASK_STATUS_LABEL[task.status]}{task.departmentByAi ? ' · AI 지정' : ''}</span>
+              <span>기한 {task.dueDate ?? '미정'}</span>
+            </span>
+            {task.departmentId === null && task.suggestedDepartmentName && <span className="suggested-note">AI 추천: {task.suggestedDepartmentName} · 확인 필요</span>}
+          </button>)}
+        </div>)}
+        {taskless.length > 0 && <div className="department-node unassigned-node">
+          <div className="department-node-head"><FlowIcon kind="task" /><strong>업무가 없는 결정</strong><span>{taskless.length}건</span></div>
+          {taskless.map(decision => <button type="button" key={decision.id}
+            className={`flow-task ${isSelected('decision', decision.id) ? 'active-node' : ''}`}
+            aria-pressed={isSelected('decision', decision.id)} aria-controls="meeting-inspector"
+            onClick={() => onSelect({ kind: 'decision', id: decision.id, segmentIds: decision.sourceSegmentIds })}>
+            <strong>{decision.summary}</strong>
+            <span className="task-node-meta"><span>{DECISION_STATUS_LABEL[decision.status]}</span><span>결정 검토 →</span></span>
+          </button>)}
+        </div>}
       </div>
     </div>
     <footer className="map-footer"><span>AI가 제안한 업무는 승인 후 업무보드에 반영됩니다.</span><span>담당·기한이 없는 내용은 미정으로 남깁니다.</span></footer>

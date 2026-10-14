@@ -314,11 +314,17 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
 .card-head .chip, .task-head .chip { margin-bottom: 0; }
 .summary { margin: 0 0 8px; }
 .decision h4 { margin: 12px 0 4px; font-size: 0.9rem; color: var(--muted); }
+/* 업무 하나하나를 테두리 있는 칸으로 나눠, 여러 업무가 이어져도 어디까지가 한 업무인지 보이게 한다 */
 .task {
-  border-top: 1px dashed var(--border);
-  padding: 10px 0;
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 10px;
 }
-.task.selected { background: var(--chip-bg); margin: 0 -8px; padding: 10px 8px; border-radius: 8px; }
+.task-head > span:first-child { font-weight: 600; }
+.task.selected { background: var(--chip-bg); border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 .task-fields { display: grid; gap: 4px; }
 .notes {
   margin: 6px 0;
@@ -552,6 +558,17 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
 .active-node, .decision-node:hover, .flow-task:hover { background: var(--chip-bg); }
 .active-node { outline: 2px solid var(--primary); outline-offset: 2px; }
 .source-node:focus-visible, .decision-node:focus-visible, .flow-task:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; }
+/* 부서별 보기: 부서 묶음이 세로로 이어지고, 승인된 결정의 업무는 왼쪽에 선을 붙인다 */
+.map-columns.by-department { grid-template-columns: 240px minmax(0,1fr); }
+.flow-branches.by-department { gap: 20px; }
+.flow-branches.by-department .department-node { animation: branch-reveal .38s ease-out both; }
+.flow-branches.by-department .department-node::before { left: -32px; width: 32px; }
+/* 선: 회의록에서 나온 가로선이 첫 부서 머리와 같은 높이로 이어지고, 부서 머리끼리는 세로선 조각으로 잇는다(gap 20px + 머리 29px) */
+.flow-canvas.by-department .flow-source::after { top: 29px; }
+.flow-branches.by-department::before { display: none; }
+.flow-branches.by-department .department-node:not(:last-child)::after { content: ''; position: absolute; left: -32px; top: 29px; bottom: -49px; border-left: 2px solid var(--border); }
+.flow-task.confirmed { box-shadow: inset 3px 0 0 var(--primary); }
+.unassigned-help { margin: 0; padding: 10px 15px 12px; color: var(--muted); font-size: .74rem; }
 .no-task-node { background: var(--surface); border: 1px dashed var(--border); border-radius: 12px; padding: 26px 14px; color: var(--muted); text-align: left; font-size: .8rem; }
 .flow-empty { display: grid; gap: 12px; padding: 30px; color: var(--muted); }
 .flow-empty p { font-size: .85rem; margin: 0; }
@@ -602,6 +619,8 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
   .department-branches { margin-left: 22px; }
   .department-branches::before { left: -12px; top: -20px; bottom: 30px; }
   .department-node::before { left: -13px; width: 12px; }
+  .flow-branches.by-department .department-node::before { left: -20px; width: 20px; }
+  .flow-branches.by-department .department-node:not(:last-child)::after { left: -20px; }
   .map-heading { align-items: flex-start; flex-direction: column; }
   .meeting-hero { padding: 26px; gap: 22px; }
   .hero-copy h1 { font-size: 1.7rem; }
@@ -615,7 +634,7 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
   .map-heading { padding: 20px; }
   .map-heading h3 { font-size: 1rem; }
   .flow-canvas { display: flex; flex-direction: column; gap: 24px; padding: 20px; }
-  .flow-source::after, .flow-branches::before, .decision-branch::before { display: none; }
+  .flow-source::after, .flow-branches::before, .decision-branch::before, .flow-branches.by-department .department-node::before, .flow-branches.by-department .department-node:not(:last-child)::after { display: none; }
   .source-node { padding: 20px; }
   .source-counts { gap: 38px; }
   .source-help { display: none; }
@@ -627,7 +646,7 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
   .source-options { grid-template-columns: 1fr; }
   .meeting-new-page h2 { font-size: 1.45rem; }
 }
-@media (prefers-reduced-motion: reduce) { .decision-branch { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .decision-branch, .flow-branches.by-department .department-node { animation: none; } }
 
 .meeting-inspector[hidden], .meeting-inspector [hidden] { display: none !important; }
 
