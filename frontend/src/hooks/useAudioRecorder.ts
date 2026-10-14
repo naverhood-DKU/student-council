@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { recordingToWav } from './wav';
 
 export interface UseAudioRecorderReturn {
   isRecording: boolean;
@@ -39,23 +40,18 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
         }
       };
 
-      recorder.onstop = () => {
-        // 실제 인코딩된 mimeType을 그대로 사용
-        const actualType = mimeType.split(';')[0]; // 'audio/webm' 또는 'audio/mp4'
-        const extension = actualType.includes('mp4') ? 'mp4' : 'webm';
-
-        const recordedBlob = new Blob(audioChunksRef.current, { type: actualType });
-        
-        // 실제 데이터 포맷에 맞게 .webm(또는 .mp4) 파일로 생성
-        const file = new File(
-          [recordedBlob],
-          `meeting_mic_${Date.now()}.${extension}`,
-          { type: actualType }
-        );
-
-        setRecordedFile(file);
+      recorder.onstop = async () => {
         // 마이크 스트림 트랙 종료 (브라우저 녹음 표시 끄기)
         stream.getTracks().forEach((track) => track.stop());
+        const recordedBlob = new Blob(audioChunksRef.current, { type: mimeType.split(';')[0] });
+        try {
+          // webm/mp4 는 CLOVA Speech 가 못 읽고 백엔드도 m4a·mp3·wav 만 받아서 진짜 WAV 로 바꿔 올린다.
+          const wav = await recordingToWav(recordedBlob);
+          setRecordedFile(new File([wav], `meeting_mic_${Date.now()}.wav`, { type: 'audio/wav' }));
+        } catch (err) {
+          console.error('녹음 변환 실패:', err);
+          alert('녹음을 WAV로 바꾸지 못했습니다. 다시 녹음하거나 음성 파일 업로드를 써 주세요.');
+        }
       };
 
       recorder.start(1000);
