@@ -4,8 +4,9 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 public interface JobRepository extends JpaRepository<Job, Long> {
@@ -36,4 +37,9 @@ public interface JobRepository extends JpaRepository<Job, Long> {
     Optional<Job> findFirstByTypeAndTargetIdOrderByIdDesc(JobType type, Long targetId);
 
     boolean existsByTypeAndTargetIdAndStatusIn(JobType type, Long targetId, Collection<JobStatus> statuses);
+
+    @Modifying
+    @Transactional
+    @Query("update Job j set j.lockedUntil = :newLockedUntil where j.id = :id and j.version = :version and j.lockedUntil > :now and j.status = kr.dku.councilflow.job.JobStatus.RUNNING")
+    int renewLease(@Param("id") long id, @Param("version") long version, @Param("newLockedUntil") Instant newLockedUntil, @Param("now") Instant now);
 }

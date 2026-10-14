@@ -42,10 +42,12 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
   const [requesting, setRequesting] = useState(false)
   const [reviewComplete, setReviewComplete] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showTranscript, setShowTranscript] = useState(false)
+  
   const job = liveJob && liveJob.id === latestJob?.id ? liveJob : latestJob
   const working = job != null && (job.status === 'QUEUED' || job.status === 'RUNNING')
 
-  // 분석이 끝날 때까지 작업 상태를 2초마다 확인한다.
+  // 분석 또는 전사가 끝날 때까지 작업 상태를 2초마다 확인한다.
   useEffect(() => {
     if (!latestJob || (latestJob.status !== 'QUEUED' && latestJob.status !== 'RUNNING')) return
     const timer = setInterval(async () => {
@@ -79,14 +81,41 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
         <span className={`chip status-${meeting.status.toLowerCase()}`}>{reviewComplete ? '검토 완료' : MEETING_STATUS_LABEL[meeting.status]}</span>
         <h2>{meeting.title}</h2>
         <p className="meeting-subtitle">회의에서 나온 결정이 각 부서의 할 일로 이어집니다.</p>
-        <p className="muted small">{formatDateTime(meeting.heldAt)} · 발언 {detail.segmentCount}줄</p>
+        <p className="muted small">
+          {formatDateTime(meeting.heldAt)} · 발언 {detail.segmentCount}줄
+          {detail.segments && detail.segments.length > 0 && (
+            <button
+              type="button"
+              className="ghost small"
+              style={{ marginLeft: '8px' }}
+              onClick={() => setShowTranscript(v => !v)}
+            >
+              {showTranscript ? '회의 대본 닫기' : '전사 회의 대본 보기'}
+            </button>
+          )}
+        </p>
       </section>
+
+      {/* 음성 전사 대본 뷰어 */}
+      {showTranscript && detail.segments && (
+        <section className="card transcript-card" style={{ marginBottom: '1.5rem', maxHeight: '320px', overflowY: 'auto' }}>
+          <h3>회의 전사 원문 대본</h3>
+          <ul className="transcript-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+            {detail.segments.map((seg, idx) => (
+              <li key={idx} style={{ marginBottom: '8px', lineHeight: '1.5' }}>
+                <strong>{seg.speakerLabel || `화자 ${idx + 1}`}:</strong> {seg.text}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <ol className="meeting-progress" aria-label="회의 분석 진행 단계">
         <li className="complete"><span>01</span><strong>회의록 등록</strong><small>원문 준비 완료</small></li>
         <li className={meeting.status === 'ANALYZED' ? 'complete' : working ? 'current' : ''}><span>02</span><strong>결정·업무 연결</strong><small>{working ? job?.status === 'QUEUED' || job?.quotaWaitUntil ? '분석 대기 중' : 'AI가 분석 중' : meeting.status === 'ANALYZED' ? '분석 완료' : '분석 대기'}</small></li>
         <li className={reviewComplete ? 'complete' : meeting.status === 'ANALYZED' ? 'current' : ''}><span>03</span><strong>검토 후 업무 확정</strong><small>{reviewComplete ? '검토 완료 · 업무보드 연결' : '근거 확인 · 승인'}</small></li>
       </ol>
+
       {working && job && (
         <div className="card notice-card" role="status">
           <span className="spinner" aria-hidden="true" />

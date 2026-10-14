@@ -40,6 +40,11 @@ public class Meeting extends BaseEntity {
     @Column(nullable = false, length = 30)
     private MeetingStatus status;
 
+    @Column(length = 100)
+    private String consentConfirmedBy;
+
+    private Instant consentConfirmedAt;
+
     protected Meeting() {
     }
 
@@ -54,6 +59,28 @@ public class Meeting extends BaseEntity {
         return meeting;
     }
 
+        public static Meeting fromAudio(
+            Organization organization,
+            String title,
+            Instant heldAt,
+            String fileKey,
+            String confirmedBy,
+            Instant confirmedAt
+    ) {
+        Meeting meeting = new Meeting();
+        meeting.organization = organization;
+        meeting.title = title;
+        meeting.heldAt = heldAt;
+        meeting.sourceType = SourceType.AUDIO;
+        meeting.fileKey = fileKey;
+        meeting.transcriptVersion = 1;
+        meeting.status = MeetingStatus.READY;
+        meeting.consentConfirmedBy = confirmedBy;
+        meeting.consentConfirmedAt = confirmedAt;
+        return meeting;
+    }
+    
+
     public void markAnalyzing() {
         this.status = MeetingStatus.ANALYZING;
     }
@@ -64,6 +91,10 @@ public class Meeting extends BaseEntity {
 
     public void markAnalysisFailed() {
         this.status = MeetingStatus.ANALYSIS_FAILED;
+    }
+
+    public void setTranscriptVersion(int transcriptVersion) {
+        this.transcriptVersion = transcriptVersion;
     }
 
     public Organization getOrganization() {
@@ -96,5 +127,9 @@ public class Meeting extends BaseEntity {
 
     public MeetingStatus getStatus() {
         return status;
+    }
+
+    public void markReady() {
+        this.status = MeetingStatus.READY;
     }
 }
