@@ -1,7 +1,9 @@
 package kr.dku.councilflow.expense;
 
 import java.text.Normalizer;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -12,11 +14,23 @@ import java.util.regex.Pattern;
  * - 한글·영문·숫자만 남기고 나머지 기호는 공백으로 바꾼다(검색 연산자가 섞여 들어가는 것도 막는다).
  * - ngram 은 글자 2개 단위라 1글자 낱말은 검색에 보탬이 안 되므로 버린다.
  * - 같은 낱말은 한 번만 쓴다. 전체는 MAX_CHARS 자로 자른다.
+ * - 음성 인식(전사)은 영문 약어를 한글 소리 그대로 적는 일이 많다("LT" → "엘티"). 규정에는 "LT"로 적혀 있으므로
+ *   자주 나오는 소리 표기를 규정의 표기로 바꾼 낱말을 덧붙인다(원래 낱말은 그대로 둔다).
  */
 public final class SearchTerms {
 
     public static final int MAX_CHARS = 300;
     private static final Pattern NOT_WORD = Pattern.compile("[^\\p{IsHangul}\\p{L}\\p{N}]+");
+
+    /** 전사에서 자주 틀리게 적히는 말 → 규정에 쓰인 표기. 낱말 안에 들어 있으면(엘티가, 엘티는) 덧붙인다. */
+    private static final Map<String, String> SPEECH_ALIASES = new LinkedHashMap<>();
+
+    static {
+        SPEECH_ALIASES.put("엘티", "LT");
+        SPEECH_ALIASES.put("엠티", "MT");
+        SPEECH_ALIASES.put("오티", "OT");
+        SPEECH_ALIASES.put("기프트콘", "기프티콘");
+    }
 
     private SearchTerms() {
     }
@@ -64,6 +78,11 @@ public final class SearchTerms {
                     words.add(word);
                 }
             }
+            SPEECH_ALIASES.forEach((spoken, written) -> {
+                if (cleaned.contains(spoken)) {
+                    words.add(written);
+                }
+            });
         }
         if (words.isEmpty()) {
             return null;

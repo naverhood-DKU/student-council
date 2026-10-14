@@ -24,6 +24,16 @@ class SearchTermsTest {
     }
 
     @Test
+    void 전사에서_소리_그대로_적힌_약어는_규정의_표기를_덧붙인다() {
+        // "LT"를 "엘티"로 받아 적어도 규정의 "LT"가 후보로 찾아진다. 원래 낱말은 그대로 둔다.
+        assertThat(SearchTerms.build("엘티 숙박비 결제")).isEqualTo("엘티 숙박비 결제 LT");
+        assertThat(SearchTerms.build("엘티는 학생회비로", null)).isEqualTo("엘티는 학생회비로 LT");
+        assertThat(SearchTerms.build("경품 기프트콘")).isEqualTo("경품 기프트콘 기프티콘");
+        // 이미 규정의 표기이면 중복으로 넣지 않는다.
+        assertThat(SearchTerms.build("엘티 LT")).isEqualTo("엘티 LT");
+    }
+
+    @Test
     void 쓸_낱말이_없으면_null() {
         assertThat(SearchTerms.build((String) null)).isNull();
         assertThat(SearchTerms.build("  ", "!!! ??", "가")).isNull();
