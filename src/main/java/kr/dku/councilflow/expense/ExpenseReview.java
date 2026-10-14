@@ -22,6 +22,9 @@ public class ExpenseReview extends BaseEntity {
 
     private Long decisionId;
 
+    /** 회의 분석 뒤 자동으로 확인한 업무 카드. 사람이 요청한 건은 null */
+    private Long taskId;
+
     @Column(nullable = false, length = 200)
     private String item;
 
@@ -41,6 +44,10 @@ public class ExpenseReview extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private ExpenseReviewStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private ExpenseReviewOrigin origin = ExpenseReviewOrigin.MANUAL;
 
     @Convert(converter = JsonColumns.LongList.class)
     @Column(columnDefinition = "json")
@@ -84,8 +91,23 @@ public class ExpenseReview extends BaseEntity {
         this.requestedBy = requestedBy;
     }
 
+    /**
+     * 회의 분석이 끝난 뒤 업무 카드 하나에 대해 서버가 자동으로 만든 검토. 요청한 사람이 없다(requestedBy = null).
+     */
+    public static ExpenseReview auto(Long orgId, Long decisionId, Long taskId, String item, Long amount,
+                                     String fundSource, String note, String searchText,
+                                     ExpenseReviewStatus status, List<Long> clauseIds) {
+        ExpenseReview review = new ExpenseReview(orgId, decisionId, item, amount, fundSource, null, note, searchText,
+                status, clauseIds, null);
+        review.taskId = taskId;
+        review.origin = ExpenseReviewOrigin.AUTO;
+        return review;
+    }
+
     public Long getOrgId() { return orgId; }
     public Long getDecisionId() { return decisionId; }
+    public Long getTaskId() { return taskId; }
+    public ExpenseReviewOrigin getOrigin() { return origin; }
     public String getItem() { return item; }
     public Long getAmount() { return amount; }
     public String getFundSource() { return fundSource; }

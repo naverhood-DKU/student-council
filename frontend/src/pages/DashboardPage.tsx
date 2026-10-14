@@ -81,7 +81,6 @@ function Dashboard({ org }: { org: OrgDetail }) {
         </Link>
         <Link to={`/orgs/${org.id}/sent`} className="ghost">보낸 요청</Link>
         <Link to={`/orgs/${org.id}/expense`} className="ghost">지출 절차 확인</Link>
-        <Link to={`/orgs/${org.id}/rules`} className="ghost">규정</Link>
         <Link to={`/orgs/${org.id}/members`} className="ghost">
           구성원·부서·직책{pendingJoins > 0 && <span className="count-badge" title="가입 신청">{pendingJoins}</span>}
         </Link>

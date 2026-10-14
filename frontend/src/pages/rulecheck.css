@@ -1,0 +1,37 @@
+/* 업무 카드의 규정 확인 표시 전용 스타일. 공용 styles.css 와 분리해 다른 화면 작업과 충돌하지 않게 한다. */
+
+.rulecheck {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.rulecheck-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.rulecheck-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--chip-bg);
+  color: var(--text);
+}
+/* 금지 가능성: 빨강, 위험: 주황. 색만으로 구분하지 않도록 글자도 항상 함께 보인다. */
+.rulecheck-badge-prohibited { background: var(--error); color: #fff; }
+.rulecheck-badge-risk { background: #b45309; color: #fff; }
+.rulecheck-badge-unchecked, .rulecheck-badge-failed { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+.rulecheck-badge-pending { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+.rulecheck-prohibited { border-color: var(--error); }
+.rulecheck-risk { border-color: #b45309; }
+.rulecheck-link { font-size: 0.8125rem; }
+.rulecheck-summary { margin: 6px 0 0; }
+.rulecheck-evidence { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 0.875rem; }
+.rulecheck-quote {
+  margin: 4px 0 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--border);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

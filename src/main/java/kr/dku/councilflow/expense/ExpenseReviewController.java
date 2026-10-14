@@ -5,6 +5,7 @@ import kr.dku.councilflow.auth.CurrentUser;
 import kr.dku.councilflow.common.web.IfMatch;
 import kr.dku.councilflow.job.JobView;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,9 +20,20 @@ import org.springframework.web.bind.annotation.RestController;
 class ExpenseReviewController {
 
     private final ExpenseReviewService service;
+    private final TaskRuleChecks ruleChecks;
 
-    ExpenseReviewController(ExpenseReviewService service) {
+    ExpenseReviewController(ExpenseReviewService service, TaskRuleChecks ruleChecks) {
         this.service = service;
+        this.ruleChecks = ruleChecks;
+    }
+
+    /**
+     * 업무 카드 하나의 규정 확인 표시(돈과 관련된 카드만). 대상이 아니면 204.
+     * 화면은 AI 안내가 끝날 때까지(badge=PENDING) 이 주소를 다시 불러 배지를 바꾼다.
+     */
+    @GetMapping("/api/tasks/{taskId}/rule-check")
+    ResponseEntity<TaskRuleChecks.RuleCheckView> ruleCheck(CurrentUser user, @PathVariable long taskId) {
+        return ruleChecks.get(user, taskId).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     /** { orgId, decisionId?, item?, amount?, fundSource?, plannedDate?, note?, keywords? } */

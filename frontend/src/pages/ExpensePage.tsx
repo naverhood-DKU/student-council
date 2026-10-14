@@ -37,7 +37,7 @@ function won(amount: number | null) {
 
 /**
  * 지출 절차 검토 목록과 새 요청.
- * 요청하면 이 그룹이 확정한 규정에서 관련 조항을 찾아 보여 준다. 찾은 조항은 후보일 뿐이며,
+ * 요청하면 학교 규정(서비스가 미리 넣어 둔 공통 규정)과 이 그룹이 올린 규정에서 관련 조항을 찾아 보여 준다. 찾은 조항은 후보일 뿐이며,
  * 적용 여부와 감사 결과는 사람이 판단한다. 이 화면은 감사를 대체하지 않는다.
  */
 export function ExpensePage() {
@@ -54,8 +54,9 @@ export function ExpensePage() {
         <p><Link to={`/orgs/${orgId}`} className="muted small">← 대시보드</Link></p>
         <h2>지출 절차 확인</h2>
         <p className="muted small">
-          지출 항목을 적으면 이 그룹이 확정한 규정에서 관련 조항을 찾아 원문과 함께 보여 줍니다.
-          AI 는 후보 조항 안에서만 필요한 승인과 증빙을 정리하며, 조항 원문은 규정에 등록된 글 그대로 보여 줍니다.
+          지출 항목을 적으면 학교 규정(감사규정·총대의원회 회칙·학생회칙)에서 관련 조항을 찾아 원문과 함께 보여 줍니다.
+          AI 는 후보 조항 안에서만 필요한 승인과 증빙을 정리하며, 조항 원문은 검수해 둔 규정의 글 그대로 보여 줍니다.
+          회의에서 돈과 관련된 업무가 나오면 업무 카드에서 이 확인이 자동으로 이어집니다.
           찾은 조항은 후보일 뿐이며 감사를 대체하지 않습니다.
         </p>
         {canRequest && <NewForm orgId={orgId} />}
@@ -203,7 +204,7 @@ export function ExpenseReviewPage() {
         {review.status === 'loading' && <p className="page-message">불러오는 중…</p>}
         {review.status === 'error' && <p className="error" role="alert">{review.message}</p>}
         {review.status === 'ready' && (
-          <Result review={review.data} orgId={orgId} canWork={canWork} canComplete={canComplete} reload={reload} />
+          <Result review={review.data} canWork={canWork} canComplete={canComplete} reload={reload} />
         )}
       </main>
     </>
@@ -212,7 +213,6 @@ export function ExpenseReviewPage() {
 
 interface ResultProps {
   review: ExpenseReviewView
-  orgId: number
   canWork: boolean
   canComplete: boolean
   reload: () => void
@@ -235,7 +235,7 @@ function ClauseLinks({ clauses }: { clauses: ExpenseClauseRef[] }) {
   )
 }
 
-function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
+function Result({ review, canWork, canComplete, reload }: ResultProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const reviewed = review.status === 'REVIEWED'
@@ -481,7 +481,6 @@ function Result({ review, orgId, canWork, canComplete, reload }: ResultProps) {
               </div>
             )}
             <pre className="clause-text">{c.text}</pre>
-            <Link to={`/orgs/${orgId}/rules/${c.docId}`} className="muted small">규정 전체 보기</Link>
           </li>
         ))}
       </ul>

@@ -16,8 +16,11 @@ import kr.dku.councilflow.common.error.ErrorCode;
 @Table(name = "rule_document")
 public class RuleDocument extends BaseEntity {
 
-    /** 이 규정을 등록해 쓰는 그룹(V1 컬럼 이름 applies_to_org_id) */
-    @Column(name = "applies_to_org_id", nullable = false)
+    /**
+     * 이 규정을 등록해 쓰는 그룹(V1 컬럼 이름 applies_to_org_id).
+     * null 이면 서비스가 시드로 넣은, 모든 그룹이 쓰는 공통 규정이다(학교 감사규정·회칙 등).
+     */
+    @Column(name = "applies_to_org_id")
     private Long orgId;
 
     @Column(nullable = false, length = 200)
@@ -105,6 +108,20 @@ public class RuleDocument extends BaseEntity {
         this.status = RuleDocStatus.CONFIRMED;
         this.reviewedBy = userId;
         this.reviewedAt = now;
+    }
+
+    /**
+     * 서비스가 시드로 넣은 공통 규정을 확정한다. 사람의 확정이 아니라 개발 시점에 검수한 값을 넣는 것이라 확정자가 없다.
+     */
+    public void confirmBySystem(Instant now) {
+        requireDraft();
+        this.status = RuleDocStatus.CONFIRMED;
+        this.reviewedAt = now;
+    }
+
+    /** 모든 그룹이 쓰는 공통 규정인가. 공통 규정은 화면에서 고치거나 지울 수 없다. */
+    public boolean isGlobal() {
+        return orgId == null;
     }
 
     public void retire() {

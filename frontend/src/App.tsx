@@ -15,8 +15,6 @@ import { DeliveryStatusPage } from './pages/DeliveryStatusPage'
 import { MembersPage } from './pages/MembersPage'
 import { AccountPage } from './pages/AccountPage'
 import { AdminPage } from './pages/AdminPage'
-import { RulesPage } from './pages/RulesPage'
-import { RuleDocumentPage } from './pages/RuleDocumentPage'
 import { ExpensePage, ExpenseReviewPage } from './pages/ExpensePage'
 
 export function App() {
@@ -33,8 +31,6 @@ export function App() {
       <Route path="/orgs/:orgId/inbox" element={<RequireAuth><InboxPage /></RequireAuth>} />
       <Route path="/orgs/:orgId/sent" element={<RequireAuth><SentPage /></RequireAuth>} />
       <Route path="/orgs/:orgId/members" element={<RequireAuth><MembersPage /></RequireAuth>} />
-      <Route path="/orgs/:orgId/rules" element={<RequireAuth><RulesPage /></RequireAuth>} />
-      <Route path="/orgs/:orgId/rules/:docId" element={<RequireAuth><RuleDocumentPage /></RequireAuth>} />
       <Route path="/orgs/:orgId/expense" element={<RequireAuth><ExpensePage /></RequireAuth>} />
       <Route path="/orgs/:orgId/expense/:reviewId" element={<RequireAuth><ExpenseReviewPage /></RequireAuth>} />
       <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />

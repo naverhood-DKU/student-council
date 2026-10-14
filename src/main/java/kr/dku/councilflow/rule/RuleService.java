@@ -154,7 +154,10 @@ public class RuleService {
     @Transactional(readOnly = true)
     public DocDetail get(CurrentUser user, long docId) {
         RuleDocument doc = load(docId);
-        accessGuard.requireMember(user, doc.getOrgId());
+        if (!doc.isGlobal()) {
+            accessGuard.requireMember(user, doc.getOrgId());
+        }
+        // 공통 규정은 로그인한 누구나 읽을 수 있다(원문은 학교 규정이다).
         return detail(doc, List.of());
     }
 
@@ -164,7 +167,7 @@ public class RuleService {
     @Transactional
     public DocSummary updateMetadata(CurrentUser user, long docId, String ifMatch, JsonNode body) {
         RuleDocument doc = lockedDoc(docId);
-        OrgAccess access = accessGuard.requireOwner(user, doc.getOrgId());
+        OrgAccess access = requireOwnerOf(user, doc);
         IfMatch.check(ifMatch, doc.getVersion());
         doc.requireDraft();
         Map<String, Object> before = metadataSnapshot(doc);
@@ -204,7 +207,7 @@ public class RuleService {
     public ClauseView updateClause(CurrentUser user, long clauseId, String ifMatch, JsonNode body) {
         Clause clause = loadClause(clauseId);
         RuleDocument doc = lockedDoc(clause.getDocId());
-        OrgAccess access = accessGuard.requireOwner(user, doc.getOrgId());
+        OrgAccess access = requireOwnerOf(user, doc);
         doc.requireDraft();
         IfMatch.check(ifMatch, clause.getVersion());
         Map<String, Object> before = clauseSnapshot(clause);
@@ -238,7 +241,7 @@ public class RuleService {
     @Transactional
     public ClauseView addClause(CurrentUser user, long docId, JsonNode body) {
         RuleDocument doc = lockedDoc(docId);
-        OrgAccess access = accessGuard.requireOwner(user, doc.getOrgId());
+        OrgAccess access = requireOwnerOf(user, doc);
         doc.requireDraft();
         if (clauses.countByDocId(docId) >= MAX_PIECES) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "조항이 너무 많습니다.");
@@ -287,7 +290,7 @@ public class RuleService {
     public void deleteClause(CurrentUser user, long clauseId) {
         Clause clause = loadClause(clauseId);
         RuleDocument doc = lockedDoc(clause.getDocId());
-        OrgAccess access = accessGuard.requireOwner(user, doc.getOrgId());
+        OrgAccess access = requireOwnerOf(user, doc);
         doc.requireDraft();
         Map<String, Object> before = clauseSnapshot(clause);
         clauses.delete(clause);
@@ -298,7 +301,7 @@ public class RuleService {
     @Transactional
     public int reviewClauses(CurrentUser user, long docId, List<Long> clauseIds) {
         RuleDocument doc = lockedDoc(docId);
-        OrgAccess access = accessGuard.requireOwner(user, doc.getOrgId());
+        OrgAccess access = requireOwnerOf(user, doc);
         doc.requireDraft();
         if (clauseIds == null || clauseIds.isEmpty()) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "검수 완료할 조항을 골라 주세요.");
@@ -323,7 +326,7 @@ public class RuleService {
     @Transactional
     public DocSummary confirm(CurrentUser user, long docId, String ifMatch) {
         RuleDocument doc = lockedDoc(docId);
-        OrgAccess access = accessGuard.requireOwner(user, doc.getOrgId());
+        OrgAccess access = requireOwnerOf(user, doc);
         IfMatch.check(ifMatch, doc.getVersion());
         doc.requireDraft();
         List<String> missing = new ArrayList<>();
@@ -355,7 +358,7 @@ public class RuleService {
     @Transactional
     public DocSummary retire(CurrentUser user, long docId, String ifMatch) {
         RuleDocument doc = lockedDoc(docId);
-        OrgAccess access = accessGuard.requireOwner(user, doc.getOrgId());
+        OrgAccess access = requireOwnerOf(user, doc);
         IfMatch.check(ifMatch, doc.getVersion());
         Map<String, Object> before = metadataSnapshot(doc);
         doc.retire();
@@ -369,7 +372,7 @@ public class RuleService {
     @Transactional
     public void deleteDraft(CurrentUser user, long docId) {
         RuleDocument doc = lockedDoc(docId);
-        OrgAccess access = accessGuard.requireOwner(user, doc.getOrgId());
+        OrgAccess access = requireOwnerOf(user, doc);
         doc.requireDraft();
         Map<String, Object> before = metadataSnapshot(doc);
         clauses.deleteByDocId(docId);
@@ -381,6 +384,14 @@ public class RuleService {
 
     private RuleDocument load(long docId) {
         return docs.findById(docId).orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+    }
+
+    /** 그룹이 올린 규정은 그 그룹 회장만 고친다. 서비스가 넣은 공통 규정은 화면에서 고칠 수 없다. */
+    private OrgAccess requireOwnerOf(CurrentUser user, RuleDocument doc) {
+        if (doc.isGlobal()) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "서비스가 제공하는 공통 규정은 고치거나 지울 수 없습니다.");
+        }
+        return accessGuard.requireOwner(user, doc.getOrgId());
     }
 
     private RuleDocument lockedDoc(long docId) {

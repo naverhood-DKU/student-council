@@ -15,6 +15,7 @@ import kr.dku.councilflow.decision.EvidenceStatus;
 import kr.dku.councilflow.decision.ExpenseProposal;
 import kr.dku.councilflow.decision.Task;
 import kr.dku.councilflow.decision.TaskRepository;
+import kr.dku.councilflow.expense.RuleCheckPlanner;
 import kr.dku.councilflow.job.JobFailure;
 import kr.dku.councilflow.meeting.Meeting;
 import kr.dku.councilflow.meeting.Segment;
@@ -41,13 +42,15 @@ public class ProposalWriter {
     private final TaskRepository tasks;
     private final SegmentRepository segments;
     private final DepartmentRepository departments;
+    private final RuleCheckPlanner ruleChecks;
 
     ProposalWriter(DecisionRepository decisions, TaskRepository tasks, SegmentRepository segments,
-                   DepartmentRepository departments) {
+                   DepartmentRepository departments, RuleCheckPlanner ruleChecks) {
         this.decisions = decisions;
         this.tasks = tasks;
         this.segments = segments;
         this.departments = departments;
+        this.ruleChecks = ruleChecks;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -85,7 +88,10 @@ public class ProposalWriter {
         if (old.isEmpty()) {
             return;
         }
-        tasks.deleteAll(tasks.findByDecisionIdInOrderById(old.stream().map(Decision::getId).toList()));
+        List<Long> oldIds = old.stream().map(Decision::getId).toList();
+        // 옛 결정에서 자동으로 만든 규정 확인(지출 검토)이 결정을 가리키므로 먼저 정리한다.
+        ruleChecks.clearForDecisions(oldIds);
+        tasks.deleteAll(tasks.findByDecisionIdInOrderById(oldIds));
         decisions.deleteAll(old);
         decisions.flush();
     }
