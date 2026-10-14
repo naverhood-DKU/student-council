@@ -35,6 +35,14 @@ export function positionLabel(m: { role: MembershipRole; positionName: string | 
   return m.positionName ?? ROLE_LABEL[m.role]
 }
 
+/** 업무 완전 삭제 전 확인. 기록을 남기려면 취소를 쓰라고 함께 알린다. */
+export function confirmDeleteTask(title: string): boolean {
+  return window.confirm(
+    `「${title}」 업무를 완전히 지울까요? 체크리스트도 함께 지워지고 되돌릴 수 없습니다.\n`
+      + '기록을 남기고 멈추기만 하려면 삭제 대신 업무 취소를 쓰세요.',
+  )
+}
+
 export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
   READY: '분석 전',
   ANALYZING: '분석 중',

@@ -16,7 +16,12 @@ public record AiAnalysis(List<Agenda> agendas) {
                            List<Task> tasks, Expense expenseProposal) {
     }
 
-    public record Task(String title, String ownerDepartment, String dueDate, List<String> sourceSegmentIds) {
+    /**
+     * ownerDepartment: 회의에서 말한 담당 그대로(말하지 않았으면 "").
+     * department·departmentReason: AI가 등록된 부서 중에서 고른 담당과 이유(고를 근거가 없으면 "").
+     */
+    public record Task(String title, String ownerDepartment, String department, String departmentReason,
+                       String dueDate, List<String> sourceSegmentIds) {
     }
 
     public record Expense(String item, String amount, String fundSource) {

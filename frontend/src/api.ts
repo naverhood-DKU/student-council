@@ -176,6 +176,10 @@ export interface TaskView {
   status: TaskStatus
   departmentId: number | null
   departmentName: string | null
+  /** AI가 업무 내용으로 고른 담당인지(회의에서 말한 담당이 아님). 회장이 바꾸면 false */
+  departmentByAi: boolean
+  /** AI가 그 부서를 고른 이유 */
+  departmentReason: string | null
   ownerDepartmentText: string | null
   suggestedDepartmentId: number | null
   suggestedDepartmentName: string | null
@@ -272,6 +276,22 @@ export interface RuleCheck {
   summary: string
   candidateCount: number
   evidence: RuleCheckEvidence[]
+}
+
+/** 회의를 지우면 함께 사라지는 것 */
+export interface MeetingDeletionImpact {
+  title: string
+  decisionCount: number
+  approvedDecisionCount: number
+  taskCount: number
+  checklistItemCount: number
+  /** 이 회의의 결정으로 다른 그룹에 보낸 요청 수 */
+  deliveryCount: number
+  receiverGroups: string[]
+  /** 지워지지 않고 회의 연결만 끊기는 지출 검토 수 */
+  expenseReviewCount: number
+  /** 분석·전사가 대기·진행 중이면 지울 수 없다 */
+  jobRunning: boolean
 }
 
 export interface TaskItem {
@@ -720,6 +740,10 @@ export const api = {
   updateTask: (task: { id: number; version: number }, change: TaskPatch) =>
     request<TaskView>('PATCH', `/api/tasks/${task.id}`, change, task.version),
   board: (orgId: number) => request<BoardTask[]>('GET', `/api/orgs/${orgId}/tasks`),
+  deleteTask: (taskId: number) => request<void>('DELETE', `/api/tasks/${taskId}`),
+  meetingDeletionImpact: (meetingId: number) =>
+    request<MeetingDeletionImpact>('GET', `/api/meetings/${meetingId}/deletion-impact`),
+  deleteMeeting: (meetingId: number) => request<void>('DELETE', `/api/meetings/${meetingId}`),
   addTaskItem: (taskId: number, input: { title: string; assigneeUserId: number | null }) =>
     request<TaskItem>('POST', `/api/tasks/${taskId}/items`, input),
   updateTaskItem: (item: { id: number; version: number }, change: { title?: string; assigneeUserId?: number | null; done?: boolean }) =>

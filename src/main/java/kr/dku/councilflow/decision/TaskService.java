@@ -35,6 +35,7 @@ import tools.jackson.databind.JsonNode;
  * - viewer(부원)는 조회만 한다(체크리스트에서 자기에게 맡겨진 일의 완료 체크는 TaskItemService).
  *   UNASSIGNED ↔ ASSIGNED 는 담당 부서를 정하거나 비울 때 서버가 맞춘다.
  * - 완료(DONE)·취소(CANCELLED)된 업무는 고칠 수 없다.
+ * - 삭제: owner 는 어떤 상태의 업무든 체크리스트와 함께 완전히 지울 수 있다(delete).
  */
 @Service
 public class TaskService {
@@ -47,19 +48,22 @@ public class TaskService {
     private final OrgAccessGuard accessGuard;
     private final DecisionViews views;
     private final TaskItemService itemService;
+    private final TaskItemRepository taskItems;
     private final AuditService audit;
     private final TaskRuleChecks ruleChecks;
     private final RuleCheckPlanner ruleCheckPlanner;
 
     TaskService(TaskRepository tasks, DecisionRepository decisions, DepartmentRepository departments,
-                OrgAccessGuard accessGuard, DecisionViews views, TaskItemService itemService, AuditService audit,
-                TaskRuleChecks ruleChecks, RuleCheckPlanner ruleCheckPlanner) {
+                OrgAccessGuard accessGuard, DecisionViews views, TaskItemService itemService,
+                TaskItemRepository taskItems, AuditService audit, TaskRuleChecks ruleChecks,
+                RuleCheckPlanner ruleCheckPlanner) {
         this.tasks = tasks;
         this.decisions = decisions;
         this.departments = departments;
         this.accessGuard = accessGuard;
         this.views = views;
         this.itemService = itemService;
+        this.taskItems = taskItems;
         this.audit = audit;
         this.ruleChecks = ruleChecks;
         this.ruleCheckPlanner = ruleCheckPlanner;
@@ -166,6 +170,25 @@ public class TaskService {
         tasks.flush();
         audit.record(user.id(), orgId, "TASK_UPDATED", "TASK", taskId, before, snapshot(task));
         return views.task(task);
+    }
+
+    /**
+     * 업무 완전 삭제(회장만, 어떤 상태든). 체크리스트도 함께 지운다. 되돌릴 수 없으며 감사 기록(TASK_DELETED)에 남긴다.
+     * 기록을 남기고 멈추기만 하려면 삭제 대신 업무 취소(CANCELLED)를 쓴다.
+     */
+    @Transactional
+    public void delete(CurrentUser user, long taskId) {
+        Task task = tasks.findById(taskId).orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN));
+        long orgId = task.getDecision().getMeeting().getOrgId();
+        accessGuard.requireOwner(user, orgId);
+        Map<String, Object> before = snapshot(task);
+        before.put("decisionId", task.getDecision().getId());
+        // 이 업무 카드에 자동으로 만든 규정 확인(지출 검토)도 같이 정리한다(task_id 는 외래키가 없다).
+        ruleCheckPlanner.clearForTasks(List.of(taskId));
+        taskItems.deleteByTaskIds(List.of(taskId));
+        tasks.delete(task);
+        tasks.flush();
+        audit.record(user.id(), orgId, "TASK_DELETED", "TASK", taskId, before, null);
     }
 
     private static void changeStatus(Task task, TaskStatus target, OrgAccess access, boolean owner) {

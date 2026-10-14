@@ -12,7 +12,7 @@ import {
 } from '../api'
 import { useAuth } from '../auth'
 import { RuleCheckBadge } from './RuleCheckBadge'
-import { isOverdue, positionLabel, TASK_STATUS_LABEL } from '../labels'
+import { confirmDeleteTask, isOverdue, positionLabel, TASK_STATUS_LABEL } from '../labels'
 import { canWorkFor, errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
 import { canClearDepartment } from './TaskForms'
 import { TopBar } from './TopBar'
@@ -66,6 +66,18 @@ function DepartmentBoard({ org, departmentId }: { org: OrgDetail; departmentId: 
   const retiredName = department ? null : data.data.tasks.find((t) => t.departmentId === departmentId)?.departmentName
   if (departmentId != null && !department && !retiredName) return <p className="error">이 그룹의 부서가 아닙니다.</p>
   const title = department ? department.name : retiredName ? `${retiredName} (없앤 부서)` : '담당 미정'
+
+  /** 업무 완전 삭제(회장만, 어떤 상태든). 체크리스트도 함께 지워진다. */
+  async function remove(task: BoardTask): Promise<void> {
+    if (!confirmDeleteTask(task.title)) return
+    setError(null)
+    try {
+      await api.deleteTask(task.id)
+    } catch (e) {
+      setError(errorMessage(e, '업무를 지우지 못했습니다.'))
+    }
+    reload()
+  }
 
   async function update(task: BoardTask, change: TaskPatch): Promise<boolean> {
     setError(null)
@@ -124,7 +136,7 @@ function DepartmentBoard({ org, departmentId }: { org: OrgDetail; departmentId: 
               {items.length === 0 && <p className="empty small">없음</p>}
               {items.map((task) => (
                 <TaskCard key={`${task.id}-${task.version}`} task={task} org={org} chair={chair}
-                          people={people} onUpdate={update} onChanged={reload} />
+                          people={people} onUpdate={update} onChanged={reload} onDelete={remove} />
               ))}
             </section>
           )
@@ -135,7 +147,10 @@ function DepartmentBoard({ org, departmentId }: { org: OrgDetail; departmentId: 
           <summary>취소된 업무 {cancelled.length}건</summary>
           <ul className="row-list">
             {cancelled.map((t) => (
-              <li key={t.id} className="muted small">{t.title} · {t.meetingTitle}</li>
+              <li key={t.id} className="muted small member-row">
+                <span>{t.title} · {t.meetingTitle}</span>
+                {chair && <button type="button" className="link-button danger" onClick={() => remove(t)}>삭제</button>}
+              </li>
             ))}
           </ul>
         </details>
@@ -152,9 +167,10 @@ interface TaskCardProps {
   people: Member[]
   onUpdate: (task: BoardTask, change: TaskPatch) => Promise<boolean>
   onChanged: () => void
+  onDelete: (task: BoardTask) => Promise<void>
 }
 
-function TaskCard({ task, org, chair, people, onUpdate, onChanged }: TaskCardProps) {
+function TaskCard({ task, org, chair, people, onUpdate, onChanged, onDelete }: TaskCardProps) {
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const canWork = canWorkFor(org, task.departmentId)
@@ -177,8 +193,11 @@ function TaskCard({ task, org, chair, people, onUpdate, onChanged }: TaskCardPro
     <article className={`card board-card${overdue ? ' overdue' : ''}`}>
       <div className="card-title-row">
         <strong>{task.title}</strong>
-        {chair && !finished && !editing && (
-          <button type="button" className="link-button" onClick={() => setEditing(true)}>편집</button>
+        {chair && !editing && (
+          <span className="card-tools">
+            {!finished && <button type="button" className="link-button" onClick={() => setEditing(true)}>편집</button>}
+            <button type="button" className="link-button danger" disabled={busy} onClick={() => onDelete(task)}>삭제</button>
+          </span>
         )}
       </div>
       <p className="muted small">

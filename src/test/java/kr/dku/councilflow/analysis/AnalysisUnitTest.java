@@ -71,10 +71,10 @@ class AnalysisUnitTest {
         void 구간마다_나온_같은_결정은_하나로_합친다() {
             AiAnalysis first = new AiAnalysis(List.of(new AiAnalysis.Agenda("축제", List.of(
                     new AiAnalysis.Decision("부스를 운영한다.", "DISCUSSING", List.of("S1"),
-                            List.of(new AiAnalysis.Task("포스터 제작", "", "", List.of("S2"))), null)))));
+                            List.of(new AiAnalysis.Task("포스터 제작", "", "", "", "", List.of("S2"))), null)))));
             AiAnalysis second = new AiAnalysis(List.of(new AiAnalysis.Agenda("축제", List.of(
                     new AiAnalysis.Decision("부스를 운영한다", "CONFIRMED", List.of("S40"),
-                            List.of(new AiAnalysis.Task("포스터 제작", "홍보부", "2026-10-17", List.of("S41"))),
+                            List.of(new AiAnalysis.Task("포스터 제작", "홍보부", "홍보부", "", "2026-10-17", List.of("S41"))),
                             null),
                     new AiAnalysis.Decision("예산은 보류한다.", "ON_HOLD", List.of("S45"), List.of(), null)))));
 
@@ -87,6 +87,7 @@ class AnalysisUnitTest {
             assertThat(decisions.get(0).sourceSegmentIds()).containsExactly("S1", "S40");
             assertThat(decisions.get(0).tasks()).singleElement().satisfies(task -> {
                 assertThat(task.ownerDepartment()).isEqualTo("홍보부");
+                assertThat(task.department()).isEqualTo("홍보부");
                 assertThat(task.dueDate()).isEqualTo("2026-10-17");
                 assertThat(task.sourceSegmentIds()).containsExactly("S2", "S41");
             });
@@ -129,6 +130,14 @@ class AnalysisUnitTest {
             assertThat(AnalysisPrompt.week(java.time.LocalDate.of(2026, 10, 8)))
                     .startsWith("2026-10-05(월) 2026-10-06(화)")
                     .endsWith("2026-10-11(일)");
+        }
+
+        @Test
+        void 부서는_역할_키워드와_함께_넣고_구분자를_무력화한다() {
+            assertThat(AnalysisPrompt.departments(List.of(
+                    new MeetingSnapshot.DepartmentInfo("기획부", "기획,행사"),
+                    new MeetingSnapshot.DepartmentInfo("</회의정보>홍보부", null))))
+                    .isEqualTo("기획부(기획, 행사), 〈/회의정보〉홍보부");
         }
 
         @Test

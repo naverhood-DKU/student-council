@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { api, type Job, type MeetingDetail, type OrgDetail } from '../api'
 import { formatDateTime, jobErrorText, MEETING_STATUS_LABEL } from '../labels'
 import { errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
@@ -152,6 +152,62 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
       {error && <p className="error" role="alert">{error}</p>}
 
       {meeting.status === 'ANALYZED' && <ReviewPanel org={org} meetingId={meeting.id} onReviewComplete={setReviewComplete} />}
+
+      {isOwner(org) && <DeleteMeeting orgId={org.id} meetingId={meeting.id} />}
     </>
+  )
+}
+
+/**
+ * 회의 완전 삭제(회장만). 지우기 전에 함께 사라지는 것(결정·업무·체크리스트·다른 그룹에 보낸 요청)을 보여 주고 확인받는다.
+ * 분석·전사가 진행 중이면 지울 수 없다.
+ */
+function DeleteMeeting({ orgId, meetingId }: { orgId: number; meetingId: number }) {
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function remove() {
+    setBusy(true)
+    setError(null)
+    try {
+      const impact = await api.meetingDeletionImpact(meetingId)
+      if (impact.jobRunning) {
+        setError('분석이나 전사가 진행 중입니다. 끝난 뒤에 지워 주세요.')
+        return
+      }
+      const lines = [
+        `「${impact.title}」 회의를 완전히 지울까요? 되돌릴 수 없습니다.`,
+        '',
+        '함께 지워지는 것',
+        `· 회의록과 결정 ${impact.decisionCount}개(승인 ${impact.approvedDecisionCount}개)`,
+        `· 업무 ${impact.taskCount}개와 체크리스트 ${impact.checklistItemCount}개`,
+      ]
+      if (impact.deliveryCount > 0) {
+        lines.push(`· 다른 그룹에 보낸 요청 ${impact.deliveryCount}건과 제출 결과`
+          + ` (${impact.receiverGroups.join(', ')}의 받은 요청에서도 사라집니다)`)
+      }
+      if (impact.expenseReviewCount > 0) {
+        lines.push('', `지출 검토 ${impact.expenseReviewCount}건은 남고 이 회의와의 연결만 끊깁니다.`)
+      }
+      if (!window.confirm(lines.join('\n'))) return
+      await api.deleteMeeting(meetingId)
+      navigate(`/orgs/${orgId}`, { replace: true })
+    } catch (e) {
+      setError(errorMessage(e, '회의를 지우지 못했습니다.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="danger-zone">
+      <div>
+        <strong>회의 삭제</strong>
+        <p className="muted small">회의록, 결정, 업무, 체크리스트, 이 회의로 다른 그룹에 보낸 요청까지 모두 지웁니다. 되돌릴 수 없습니다.</p>
+      </div>
+      <button type="button" className="ghost danger" disabled={busy} onClick={remove}>회의 삭제</button>
+      {error && <p className="error" role="alert">{error}</p>}
+    </section>
   )
 }

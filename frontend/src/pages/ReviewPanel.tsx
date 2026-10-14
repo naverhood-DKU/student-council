@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { RuleCheckBadge } from './RuleCheckBadge'
 import { api, ApiError, type DecisionView, type OrgDetail, type Proposals, type Segment, type TaskView } from '../api'
-import { AI_STATUS_LABEL, DECISION_STATUS_LABEL, TASK_STATUS_LABEL } from '../labels'
+import { AI_STATUS_LABEL, confirmDeleteTask, DECISION_STATUS_LABEL, TASK_STATUS_LABEL } from '../labels'
 import { errorMessage, isOwner, useLoad } from '../useOrg'
 import { AddTaskForm } from './TaskForms'
 import { MeetingFlow } from './MeetingFlow'
@@ -285,6 +285,21 @@ function TaskRow({ task, departments, editable: decisionEditable, selected, onSe
     }
   }
 
+  /** 업무 완전 삭제(회장만). 후보에서 빼기와 달리 기록도 남지 않는다. */
+  async function remove() {
+    if (!confirmDeleteTask(task.title)) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.deleteTask(task.id)
+      onChanged()
+    } catch (e) {
+      setError(errorMessage(e, '업무를 지우지 못했습니다.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className={`task${selected ? ' selected' : ''}${cancelled ? ' cancelled-task' : ''}`}>
       <button
@@ -326,6 +341,13 @@ function TaskRow({ task, departments, editable: decisionEditable, selected, onSe
         </p>
       )}
 
+      {task.departmentByAi && departmentId === task.departmentId && (
+        <p className="small ai-pick">
+          <span className="chip warn inline-chip">AI 지정</span>
+          {' '}회의에서 담당을 말하지 않아 AI가 업무 내용으로 고른 부서입니다. 맞지 않으면 바꿔 주세요.
+          {task.departmentReason && <span className="muted block">이유: {task.departmentReason}</span>}
+        </p>
+      )}
       {(task.ownerDepartmentText || task.suggestedDepartmentName) && (
         <p className="muted small">
           {task.ownerDepartmentText && `회의에서 말한 담당: ${task.ownerDepartmentText}. `}
@@ -353,6 +375,7 @@ function TaskRow({ task, departments, editable: decisionEditable, selected, onSe
           {task.status === 'PROPOSED' && (
             <button type="button" className="link-button" disabled={busy} onClick={exclude}>후보에서 빼기</button>
           )}
+          <button type="button" className="link-button danger" disabled={busy} onClick={remove}>삭제</button>
         </div>
       )}
     </div>

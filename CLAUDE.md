@@ -13,7 +13,7 @@
 ## 절대 지킬 원칙
 
 1. **AI는 후보만 낸다. 사람이 승인해야 확정된다.** 결정·업무는 승인 API를 거치기 전까지 `PROPOSED` 상태다.
-2. **모르는 건 비운다.** 회의에서 명시되지 않은 담당·기한은 `null`. 등록된 부서 역할을 근거로 한 추천은 별도 필드(`suggested_*`)에만 넣는다.
+2. **모르는 건 비운다.** 회의에서 명시되지 않은 기한은 `null`. 담당 부서는 회의에서 말한 부서가 먼저이고, 말하지 않았으면 AI가 업무 내용과 등록된 부서 역할을 보고 등록된 부서 중 하나를 고를 수 있다. 이때는 `department_by_ai`와 이유(`department_reason`)를 남겨 화면에 "AI 지정"으로 보이고, 회장이 승인 전에 확인·변경한다. 고를 근거가 없거나 없는 부서를 고르면 비우고, 역할 키워드로 고른 추천은 별도 필드(`suggested_*`)에만 넣는다.
 3. **근거 없는 결과는 없다.** 모든 결정·업무 후보에는 `source_segment_ids`가 있어야 하고, 서버가 그 ID가 실제 존재하는지 검증한다. 검증 실패한 후보는 버리지 말고 "근거 확인 필요"로 표시한다.
 4. **규정 원문은 모델이 쓰지 않는다.** 화면에 보이는 조항 원문은 DB의 검수된 `Clause.text`를 그대로 가져온다. 모델은 조항 ID를 고르고 안내문만 쓴다. 학교 규정은 회장이 올려 검수하는 것이 아니라, 개발 시점에 사람이 원문과 대조해 검수한 값을 `resources/rules/*.json` 시드로 넣는다(검수하지 않은 문서는 DRAFT 로만 들어가 검색에 쓰이지 않는다).
 5. **규정이 없으면 안전하다고 말하지 않는다.** 관련 조항을 못 찾거나 적용 범위가 불명확하면 `NEEDS_CHECK`. "문제없음" 상태는 존재하지 않는다.
@@ -67,7 +67,7 @@ Spring Boot 4는 starter가 모듈로 나뉘어 있다. 의존성을 추가할 �
 | Meeting | id, org_id, title, held_at, source_type(TEXT/AUDIO), file_key, transcript_version, status |
 | Segment | id, meeting_id, transcript_version, seq, speaker_label, text, start_ms, end_ms |
 | Decision | id, meeting_id, agenda, summary, status, source_segment_ids, approved_by, ai_status(AI가 본 CONFIRMED/ON_HOLD/DISCUSSING), evidence_status(OK/NEEDS_CHECK), validation_notes, expense_proposal, version |
-| Task | id, decision_id, title, department_id, assignee_user_id, due_date, status, suggested_department_id, suggested_due_date, source_segment_ids, owner_department_text(회의에서 말한 담당 표현), evidence_status, validation_notes, origin(AI/MANUAL: 회장이 직접 추가), version |
+| Task | id, decision_id, title, department_id, department_by_ai(AI가 업무 내용으로 고른 담당, 회장이 바꾸면 false), department_reason(AI가 고른 이유), assignee_user_id, due_date, status, suggested_department_id, suggested_due_date, source_segment_ids, owner_department_text(회의에서 말한 담당 표현), evidence_status, validation_notes, origin(AI/MANUAL: 회장이 직접 추가), version |
 | TaskItem | id, task_id, title, assignee_user_id(담당 부서 사람), done, done_by, done_at, created_by, version — 업무 체크리스트 |
 | JoinRequest | id, user_id, org_id, status, decided_by, decided_at, reject_reason, version — (user_id, org_id) 고유, 다시 신청하면 같은 줄을 PENDING 으로 |
 | Delivery | id, decision_id, from_org_id, to_org_id, request_type(INFORM/COOPERATE/RESULT_NOTICE), status, due_date, message(요청 사항), internal_department_id(수신 조직 내 담당), clarification_reason/reply, closing_reason, previous_due_date·due_changed_at(기한 변경 표시), created_by, version |
@@ -101,6 +101,7 @@ Spring Boot 4는 starter가 모듈로 나뉘어 있다. 의존성을 추가할 �
 - DONE·CANCELLED 업무는 내용·담당·기한을 고칠 수 없다. 진행 중(IN_PROGRESS·SUBMITTED) 업무는 담당을 비울 수 없고 다른 부서로만 바꾼다.
 - 집계 분모 = 유효 대상 그룹(NOT_APPLICABLE·CANCELLED 제외). 취소 건을 완료로 세지 않는다.
 - 기한 변경은 Delivery `version`을 올리고 받은 그룹에 변경 내용을 표시한다. 완료된 결과를 덮어쓰지 않는다(끝난 전달은 기한·담당을 못 바꾸고, 제출물은 고치지 않고 새로 낸다).
+- 삭제: 회장은 회의와 업무를 완전히 지울 수 있다(되돌릴 수 없음). 회의를 지우면 회의록·발언·결정(승인된 것 포함)·업무·체크리스트, 그 결정으로 다른 그룹에 보낸 요청과 제출 결과, 분석·전사 작업 기록까지 지워지고 받은 그룹 수신함에서도 사라진다. 사람이 요청한 지출 검토(MANUAL)는 남기고 결정 연결만 끊으며, 업무 카드마다 자동으로 만든 규정 확인(AUTO 지출 검토)은 업무와 함께 지운다(`RuleCheckPlanner`). 분석·전사가 대기·진행 중이면 409. 업무는 어떤 상태든 체크리스트·자동 규정 확인과 함께 지운다. 기록을 남기려면 삭제 대신 취소(CANCELLED)를 쓴다. 무엇을 지웠는지는 감사 기록(`MEETING_DELETED`, `TASK_DELETED`)에 남긴다. 녹음 회의(`file_key`)가 생기면 회의 삭제 때 Object Storage 원본도 지워야 한다(단계 3).
 - 그룹 간 요청: 회장은 승인된 결정으로 자기 그룹을 뺀 모든 활성 그룹에 업무를 요청할 수 있다(상위·하위 관계 무관). 받은 요청을 그대로 다른 그룹에 넘기는 기능은 없다. 받은 그룹은 결정 안건·요약·요청 사항만 보고, 보낸 그룹의 회의·회의록은 403이다.
 
 ## API 계약 (핵심)
@@ -117,11 +118,14 @@ POST   /api/meetings/extract-text            PDF 회의록 → 글자(multipart:
 GET    /api/orgs/{id}/meetings               조직의 회의 목록
 GET    /api/meetings/{id}                    회의 상태 + 최근 분석 작업
 POST   /api/meetings/{id}/analysis           분석 작업 생성 → { jobId }
+GET    /api/meetings/{id}/deletion-impact    회의를 지우면 함께 사라지는 것(결정·업무·체크리스트·보낸 요청 수와 받은 그룹, 분석 진행 여부) (회장)
+DELETE /api/meetings/{id}                    회의 완전 삭제(회장, 되돌릴 수 없음). 분석·전사 진행 중이면 409
 GET    /api/jobs/{id}                        작업 상태
 GET    /api/meetings/{id}/proposals          AI 후보(결정·업무) + 근거 발언
 PATCH  /api/decisions/{id}                   승인 전 결정 문구 수정 (If-Match: version)
 POST   /api/decisions/{id}/approve           승인 (If-Match: version)
 PATCH  /api/tasks/{id}                       내용·담당·기한·상태 변경 (If-Match: version)
+DELETE /api/tasks/{id}                       업무 완전 삭제(회장, 어떤 상태든, 체크리스트 포함)
 POST   /api/decisions/{id}/tasks             업무 직접 추가(회의 책임자)
 GET    /api/orgs/{id}/decisions              승인된 결정 목록(업무 추가할 때 고름)
 GET    /api/orgs/{id}/tasks                  부서 업무보드(승인된 업무만, 취소 포함, 업무마다 체크리스트 items·규정 확인 ruleCheck)
@@ -200,6 +204,8 @@ POST   /api/join-requests/{id}/reject        거절 { reason? } (회장, If-Matc
       "tasks": [{
         "title": "string",
         "owner_department": "string | null",
+        "department": "string | null",
+        "department_reason": "string",
         "due_date": "YYYY-MM-DD | null",
         "source_segment_ids": ["string"]
       }],
@@ -215,6 +221,7 @@ POST   /api/join-requests/{id}/reject        거절 { reason? } (회장, If-Matc
 - "~하면 좋겠다", "다음에 다시 얘기하자" 같은 보류·조건부 발언은 CONFIRMED로 올리지 않는다.
 - 긴 회의는 발언 ID를 유지한 구간으로 나누어 분석하고, 병합할 때 같은 결정의 중복을 합친다.
 - JSON 형식 검증(스키마)과 의미 검증(ID 존재, 날짜 형식, 등록된 부서명 매칭)을 따로 한다.
+- 담당 부서: 프롬프트에 등록된 부서 이름과 역할 키워드를 같이 넣는다. `owner_department`는 회의에서 말한 그대로, `department`는 AI가 등록된 부서 이름 중에서 고른 것(근거가 없으면 빈 값), `department_reason`은 고른 이유 한 문장이다. 서버(`ProposalWriter`)는 ① 말한 담당이 등록된 부서 이름과 정확히 같고 그 이름이 업무(없으면 결정) 근거 발언에 실제로 있으면 그 부서(모델이 말하지 않은 부서를 "말한 담당"으로 적은 적이 있어 확인한다. 근거 발언에 없으면 AI가 고른 담당으로 다룬다), ② 아니면 `department`가 등록된 부서 이름과 정확히 같을 때 그 부서를 넣고 `department_by_ai`·이유를 남긴다. ③ 둘 다 아니면 비우고 역할 키워드 추천(`suggested_department_id`)만 넣는다. 없는 부서 이름은 쓰지 않고 검증 메모로 알린다. 형식 검증에서는 두 필드가 빠져도 빈 값으로 본다(이전 응답·가짜 AI 호환).
 
 ### 회의 업무 카드의 규정 확인(자동)
 

@@ -114,6 +114,22 @@ public class RuleCheckPlanner {
         reviews.flush();
     }
 
+    /** 업무 카드를 지우기 전에, 그 카드에서 자동으로 만든 지출 검토와 체크리스트를 정리한다(task_id 는 외래키가 없다). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void clearForTasks(Collection<Long> taskIds) {
+        if (taskIds.isEmpty()) {
+            return;
+        }
+        List<ExpenseReview> auto = reviews.findByTaskIdInOrderByIdAsc(taskIds).stream()
+                .filter(r -> r.getOrigin() == ExpenseReviewOrigin.AUTO)
+                .toList();
+        for (ExpenseReview review : auto) {
+            checklist.deleteByReviewId(review.getId());
+        }
+        reviews.deleteAll(auto);
+        reviews.flush();
+    }
+
     /** 규정 확인 대상 카드인가. 취소된 카드는 제외한다. */
     static boolean eligible(Task task) {
         if (task.getStatus() == TaskStatus.CANCELLED) {
