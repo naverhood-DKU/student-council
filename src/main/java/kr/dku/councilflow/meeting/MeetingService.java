@@ -24,7 +24,6 @@ import kr.dku.councilflow.org.Organization;
 import kr.dku.councilflow.org.OrganizationRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.ArrayList;
 
 @Service
 public class MeetingService {
@@ -151,99 +150,10 @@ public class MeetingService {
         return JobView.of(job);
     }
 
-    @Transactional
-    public JobView requestTranscription(CurrentUser user, long meetingId) {
-        Meeting meeting = meetings.findById(meetingId)
-                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "회의를 찾을 수 없습니다."));
-        accessGuard.requireOwner(user, meeting.getOrgId());
-
-        if (meeting.getSourceType() != SourceType.AUDIO) {
-            throw new ApiException(ErrorCode.BAD_REQUEST, "음성 회의만 전사를 요청할 수 있습니다.");
-        }
-
-        var running = jobs.findFirstByTypeAndTargetIdOrderByIdDesc(JobType.TRANSCRIBE, meetingId)
-                .filter(job -> EnumSet.of(JobStatus.QUEUED, JobStatus.RUNNING).contains(job.getStatus()));
-        if (running.isPresent()) {
-            return JobView.of(running.get());
-        }
-
-        Job job = jobs.save(Job.queue(JobType.TRANSCRIBE, meetingId));
-        audit.record(user.id(), meeting.getOrgId(), "TRANSCRIPTION_REQUESTED", "MEETING", meetingId, null,
-                Map.of("jobId", job.getId()));
-        return JobView.of(job);
-    }
-
     /** 회의가 속한 그룹의 소속(또는 서비스 관리자 열람)만 통과. 없는 회의도 403(존재 여부를 알려 주지 않음). */
     public Meeting loadForMember(CurrentUser user, long meetingId) {
         Meeting meeting = meetings.findById(meetingId).orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN));
         accessGuard.requireMember(user, meeting.getOrgId());
         return meeting;
-    }
-
-    @Transactional
-    public Meeting createAudioMeeting(
-            long orgId,
-            String title,
-            Instant heldAt,
-            String objectKey,
-            String confirmedBy,
-            Instant confirmedAt
-    ) {
-        Organization organization = organizations.findById(orgId)
-                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "조직을 찾을 수 없습니다."));
-        Meeting meeting = Meeting.fromAudio(organization, title, heldAt, objectKey, confirmedBy, confirmedAt);
-        return meetings.save(meeting);
-    }
-
-    public record SegmentUpdateRequest(String speakerLabel, String text) {}
-
-    @Transactional
-    public int updateTranscript(CurrentUser user, long meetingId, List<SegmentUpdateRequest> updatedSegments) {
-        Meeting meeting = meetings.findById(meetingId)
-                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "회의를 찾을 수 없습니다."));
-        accessGuard.requireMember(user, meeting.getOrganization().getId());
-
-        // 버전 1 증가
-        int newVersion = meeting.getTranscriptVersion() + 1;
-        meeting.setTranscriptVersion(newVersion);
-
-        // 새 버전으로 세그먼트 생성 및 저장
-        List<Segment> newSegments = new ArrayList<>();
-        int seq = 1;
-        for (SegmentUpdateRequest item : updatedSegments) {
-            newSegments.add(new Segment(
-                    meetingId,
-                    newVersion,
-                    seq++,
-                    item.speakerLabel(),
-                    item.text()
-            ));
-        }
-        segments.saveAll(newSegments);
-        return newVersion;
-    }
-
-    public record FallbackTextInputRequest(String rawText) {}
-
-    @Transactional
-    public void fallbackToTextInput(CurrentUser user, long meetingId, String rawText) {
-        Meeting meeting = meetings.findById(meetingId)
-                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "회의를 찾을 수 없습니다."));
-        accessGuard.requireMember(user, meeting.getOrganization().getId());
-
-        // 버전 1 증가시키거나 현재 버전으로 단일 세그먼트 등록
-        int newVersion = meeting.getTranscriptVersion() + 1;
-        meeting.setTranscriptVersion(newVersion);
-        meeting.markReady();
-
-        // 직접 입력한 원문 텍스트를 단일 Segment(또는 쪼갠 형태)로 등록
-        Segment fallbackSegment = new Segment(
-                meetingId,
-                newVersion,
-                1,
-                "직접입력",
-                rawText
-        );
-        segments.save(fallbackSegment);
     }
 }

@@ -40,12 +40,17 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
       };
 
       recorder.onstop = () => {
-        const recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        // 백엔드 허용 확장자인 .wav 로 파일 생성
+        // 실제 인코딩된 mimeType을 그대로 사용
+        const actualType = mimeType.split(';')[0]; // 'audio/webm' 또는 'audio/mp4'
+        const extension = actualType.includes('mp4') ? 'mp4' : 'webm';
+
+        const recordedBlob = new Blob(audioChunksRef.current, { type: actualType });
+        
+        // 실제 데이터 포맷에 맞게 .webm(또는 .mp4) 파일로 생성
         const file = new File(
           [recordedBlob],
-          `meeting_mic_${Date.now()}.wav`,
-          { type: 'audio/wav' }
+          `meeting_mic_${Date.now()}.${extension}`,
+          { type: actualType }
         );
 
         setRecordedFile(file);
