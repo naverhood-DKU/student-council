@@ -29,5 +29,17 @@ jobs:
           path: ~/.npm
           key: npm-${{ hashFiles('frontend/package-lock.json') }}
 
+      # Docker Hub 가 가끔 500 으로 이미지를 못 내려 주어 Testcontainers 가 실패한다.
+      # 테스트 전에 필요한 이미지를 먼저 받고, 실패하면 몇 번 다시 시도한다(끝내 못 받아도 여기서는 멈추지 않는다).
+      - name: Testcontainers 이미지 미리 받기
+        run: |
+          for image in mysql:8.0 testcontainers/ryuk:0.14.0; do
+            for attempt in 1 2 3 4; do
+              if docker pull "$image"; then break; fi
+              echo "::warning::$image 받기 실패 ($attempt/4)"
+              sleep $((attempt * 10))
+            done
+          done
+
       - name: 테스트 + 프론트 빌드
         run: ./mvnw -B verify
