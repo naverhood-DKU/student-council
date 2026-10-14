@@ -24,8 +24,13 @@ import kr.dku.councilflow.expense.RuleCheckPlanner;
 import kr.dku.councilflow.job.JobRepository;
 import kr.dku.councilflow.job.JobStatus;
 import kr.dku.councilflow.job.JobType;
+import kr.dku.councilflow.storage.ObjectStorage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 회의 완전 삭제(회장만). 회의록·발언·AI 후보·승인된 결정, 그 결정의 업무·체크리스트,
@@ -33,10 +38,14 @@ import org.springframework.transaction.annotation.Transactional;
  * - 사람이 요청한 지출 검토는 그룹의 별도 기록이라 지우지 않고 결정과의 연결만 끊는다.
  *   업무 카드마다 자동으로 만든 규정 확인(AUTO 지출 검토)은 업무와 함께 지운다(RuleCheckPlanner).
  * - 분석·전사 작업이 대기·진행 중이면 409(작업이 끝난 뒤 지운다).
+ * - 녹음 회의는 저장소(로컬 폴더·NCP Object Storage)의 원본 파일도 지운다. DB 삭제가 확정된 뒤에 지우고,
+ *   저장소 오류로 못 지우면 회의 삭제는 그대로 두고 로그(회의 id·오류 종류)만 남긴다.
  * - 무엇을 지웠는지는 감사 기록(MEETING_DELETED)에 남긴다.
  */
 @Service
 public class MeetingDeletionService {
+
+    private static final Logger log = LoggerFactory.getLogger(MeetingDeletionService.class);
 
     private static final EnumSet<JobType> MEETING_JOBS = EnumSet.of(JobType.ANALYZE, JobType.TRANSCRIBE);
     private static final EnumSet<JobStatus> UNFINISHED = EnumSet.of(JobStatus.QUEUED, JobStatus.RUNNING);
@@ -53,12 +62,13 @@ public class MeetingDeletionService {
     private final JobRepository jobs;
     private final OrgAccessGuard accessGuard;
     private final AuditService audit;
+    private final ObjectStorage storage;
 
     MeetingDeletionService(MeetingRepository meetings, SegmentRepository segments, DecisionRepository decisions,
                            TaskRepository tasks, TaskItemRepository taskItems, DeliveryRepository deliveries,
                            SubmissionRepository submissions, ExpenseReviewRepository expenseReviews,
                            RuleCheckPlanner ruleChecks, JobRepository jobs, OrgAccessGuard accessGuard,
-                           AuditService audit) {
+                           AuditService audit, ObjectStorage storage) {
         this.meetings = meetings;
         this.segments = segments;
         this.decisions = decisions;
@@ -71,12 +81,13 @@ public class MeetingDeletionService {
         this.jobs = jobs;
         this.accessGuard = accessGuard;
         this.audit = audit;
+        this.storage = storage;
     }
 
     /** 지우기 전에 화면에서 보여 줄 영향 범위 */
     public record DeletionImpact(String title, int decisionCount, long approvedDecisionCount, int taskCount,
                                  long checklistItemCount, int deliveryCount, List<String> receiverGroups,
-                                 long expenseReviewCount, boolean jobRunning) {
+                                 long expenseReviewCount, boolean jobRunning, boolean hasRecording) {
     }
 
     @Transactional(readOnly = true)
@@ -112,6 +123,27 @@ public class MeetingDeletionService {
         // 위에서 읽어 둔 결정 엔티티가 아직 이 회의를 가리키므로, 회의도 같은 방식(일괄 삭제 쿼리)으로 지운다.
         meetings.deleteAllByIdInBatch(List.of(meetingId));
         audit.record(user.id(), meeting.getOrgId(), "MEETING_DELETED", "MEETING", meetingId, before, null);
+        if (hasRecording(meeting)) {
+            deleteRecordingAfterCommit(meetingId, meeting.getFileKey());
+        }
+    }
+
+    private static boolean hasRecording(Meeting meeting) {
+        return meeting.getFileKey() != null && !meeting.getFileKey().isBlank();
+    }
+
+    /** DB 삭제가 되돌려지면 파일은 남겨야 하므로 커밋 뒤에 지운다. */
+    private void deleteRecordingAfterCommit(long meetingId, String fileKey) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    storage.delete(fileKey);
+                } catch (RuntimeException e) {
+                    log.warn("meeting={} recording delete failed: {}", meetingId, e.getClass().getSimpleName());
+                }
+            }
+        });
     }
 
     private Meeting ownedMeeting(CurrentUser user, long meetingId) {
@@ -144,7 +176,8 @@ public class MeetingDeletionService {
                 sent.stream().map(d -> d.getToOrganization().getName()).distinct().toList(),
                 decisionIds.isEmpty() ? 0 : expenseReviews.findByDecisionIdIn(decisionIds).stream()
                         .filter(r -> r.getOrigin() == ExpenseReviewOrigin.MANUAL).count(),
-                jobRunning);
+                jobRunning,
+                hasRecording(meeting));
         return new Targets(decisionIds, taskIds, sent.stream().map(Delivery::getId).toList(),
                 sent.stream().map(d -> d.getToOrganization().getId()).distinct().toList(), impact);
     }
@@ -157,6 +190,7 @@ public class MeetingDeletionService {
         map.put("taskIds", targets.taskIds());
         map.put("deliveryIds", targets.deliveryIds());
         map.put("receiverOrgIds", targets.receiverOrgIds());
+        map.put("recording", hasRecording(meeting));
         return map;
     }
 }

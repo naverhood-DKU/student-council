@@ -68,6 +68,17 @@ class NcpObjectStorageTest {
     }
 
     @Test
+    void 지우기는_버킷에_DELETE_를_보낸다() {
+        S3.enqueue(204);
+
+        storage(BUCKET, "access", "secret").delete(KEY);
+
+        FakeS3.Recorded sent = S3.requests().get(0);
+        assertThat(sent.method()).isEqualTo("DELETE");
+        assertThat(sent.path()).isEqualTo("/" + BUCKET + "/" + KEY);
+    }
+
+    @Test
     void 버킷_오류는_숨기지_않고_올린다() {
         for (int i = 0; i < 5; i++) {
             S3.enqueue(403);
@@ -83,6 +94,7 @@ class NcpObjectStorageTest {
         assertThatThrownBy(() -> storage.generatePresignedUploadUrl(KEY, 1))
                 .isInstanceOf(StorageUnavailableException.class);
         assertThatThrownBy(() -> storage.exists(KEY)).isInstanceOf(StorageUnavailableException.class);
+        assertThatThrownBy(() -> storage.delete(KEY)).isInstanceOf(StorageUnavailableException.class);
         assertThat(S3.requests()).isEmpty();
     }
 

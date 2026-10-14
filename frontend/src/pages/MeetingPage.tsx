@@ -183,6 +183,7 @@ function DeleteMeeting({ orgId, meetingId }: { orgId: number; meetingId: number 
         `· 회의록과 결정 ${impact.decisionCount}개(승인 ${impact.approvedDecisionCount}개)`,
         `· 업무 ${impact.taskCount}개와 체크리스트 ${impact.checklistItemCount}개`,
       ]
+      if (impact.hasRecording) lines.push('· 녹음 원본 파일')
       if (impact.deliveryCount > 0) {
         lines.push(`· 다른 그룹에 보낸 요청 ${impact.deliveryCount}건과 제출 결과`
           + ` (${impact.receiverGroups.join(', ')}의 받은 요청에서도 사라집니다)`)
@@ -204,7 +205,7 @@ function DeleteMeeting({ orgId, meetingId }: { orgId: number; meetingId: number 
     <section className="danger-zone">
       <div>
         <strong>회의 삭제</strong>
-        <p className="muted small">회의록, 결정, 업무, 체크리스트, 이 회의로 다른 그룹에 보낸 요청까지 모두 지웁니다. 되돌릴 수 없습니다.</p>
+        <p className="muted small">회의록(녹음 원본 포함), 결정, 업무, 체크리스트, 이 회의로 다른 그룹에 보낸 요청까지 모두 지웁니다. 되돌릴 수 없습니다.</p>
       </div>
       <button type="button" className="ghost danger" disabled={busy} onClick={remove}>회의 삭제</button>
       {error && <p className="error" role="alert">{error}</p>}

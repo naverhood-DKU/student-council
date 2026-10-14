@@ -292,6 +292,8 @@ export interface MeetingDeletionImpact {
   expenseReviewCount: number
   /** 분석·전사가 대기·진행 중이면 지울 수 없다 */
   jobRunning: boolean
+  /** 녹음 회의면 저장소의 녹음 원본도 지운다 */
+  hasRecording: boolean
 }
 
 export interface TaskItem {
