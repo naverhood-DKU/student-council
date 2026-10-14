@@ -10,7 +10,7 @@
 | LB | 공개 Application LB | App 8080으로 분산, /actuator/health 검사 |
 | NAT | 각 존 Public Subnet | Private App·Worker의 외부 API 통신 |
 | Bastion | Public, 허용 관리 IPv4 /32 | 공개키 SSH 관리 |
-| Object Storage | 비공개 버킷 | 녹음 저장 기반. 전사는 실제 통합 상태에 따라 시연 |
+| Object Storage | 비공개 버킷 `naverhood-meetings` | 녹음 저장, CLOVA Speech 전사 입력. 브라우저 presigned PUT 업로드용 CORS는 `infra/storage/meetings-cors.json` (운영 도메인·localhost:5173만 허용, `infra/storage/apply-cors.py`로 적용) |
 | Cloud Insight | 서버·DB·LB 지표, 관리 경보 | 장애·부하 확인과 운영 기록 |
 
 App·Worker는 Ubuntu 24.04, Java 21이다. App과 Worker는 역할을 분리하며 Worker에 HTTP LB를 연결하지 않는다. 각 Worker ASG의 SVR 검사는 VM을 교체하고 systemd가 프로그램을 재시작한다. 프로그램 hang 감지나 전체 존 장애 시험은 별도 과제다.
