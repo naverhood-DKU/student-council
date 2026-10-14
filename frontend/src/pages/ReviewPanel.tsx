@@ -28,14 +28,27 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
     }
   }, [proposals, onReviewComplete])
 
+  const modalOpen = selection != null || transcriptOpen
+  const closeModal = () => { setSelection(null); setTranscriptOpen(false) }
+
+  // 모달이 열려 있는 동안: Esc 로 닫기, 뒤 화면 스크롤 잠금, 근거 발언을 모달 안에서 가운데로 보여 주기
   useEffect(() => {
-    if (!selection && !transcriptOpen) return
+    if (!modalOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setSelection(null); setTranscriptOpen(false) } }
+    window.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [modalOpen])
+
+  useEffect(() => {
     const first = selection?.segmentIds[0]
-    const wide = window.matchMedia('(min-width: 900px)').matches
-    const evidence = wide && first != null ? document.getElementById(`seg-${first}`) : null
-    const target = evidence ?? document.getElementById('meeting-inspector')
-    target?.scrollIntoView({ block: evidence ? 'center' : 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
-  }, [selection, transcriptOpen])
+    if (first == null) return
+    document.getElementById(`seg-${first}`)?.scrollIntoView({ block: 'center', behavior: 'auto' })
+  }, [selection])
 
   if (proposals.status === 'loading') return <p className="page-message">AI 제안을 불러오는 중…</p>
   if (proposals.status === 'error') return <p className="error">{proposals.message}</p>
@@ -52,21 +65,23 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
         onOpenTranscript={() => {
           setSelection(null)
           setTranscriptOpen(true)
-          requestAnimationFrame(() => document.getElementById('meeting-inspector')?.scrollIntoView({ block: 'start', behavior: 'auto' }))
         }} />
       <div className="review-summary">
         <p>{pending > 0 ? `${pending}개의 결정을 검토하면 업무가 확정됩니다.` : '결정 검토를 마쳤습니다. 업무보드에서 진행 상황을 확인하세요.'}</p>
         <Link to={`/orgs/${org.id}/board`} className="ghost">업무보드로 이동 →</Link>
       </div>
-      <section id="meeting-inspector" className="meeting-inspector" hidden={!selectedDecision && !transcriptOpen} aria-label="선택한 결정과 근거 검토">
-        <header className="inspector-heading"><h3>{selectedDecision ? '선택한 결정 · 업무 검토' : '회의록 원문'}</h3>
-          <button type="button" className="link-button" onClick={() => { setSelection(null); setTranscriptOpen(false) }}>검토 창 닫기</button>
+      <div className="review-modal-backdrop" hidden={!modalOpen} onMouseDown={(e) => { if (e.target === e.currentTarget) closeModal() }}>
+      <section id="meeting-inspector" className="meeting-inspector review-modal" role="dialog" aria-modal="true"
+               aria-label="선택한 결정과 근거 검토">
+        <header className="inspector-heading"><h3>{selectedDecision ? '결정 · 업무 검토' : '회의록 원문'}</h3>
+          <button type="button" className="ghost" onClick={closeModal}>닫기 ✕</button>
         </header>
+        <div className="review-modal-body">
         <div className={selectedDecision ? 'review' : 'transcript-only'}>
           <div className="candidates" hidden={!selectedDecision}>
             {data.decisions.map(decision => <div key={`${decision.id}-${decision.version}`} hidden={decision.id !== selectedDecision?.id}>
               <DecisionCard decision={decision} departments={data.departments} chair={isOwner(org)}
-                selection={selection} onSelect={setSelection} onChanged={reload}
+                selection={selection} onSelect={setSelection} onChanged={reload} onApproved={closeModal}
                 deliveryLink={`/orgs/${org.id}/decisions/${decision.id}/deliveries`} />
             </div>)}
           </div>
@@ -75,7 +90,9 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
             <ol className="segments">{data.segments.map(s => <li key={s.id} id={`seg-${s.id}`} className={highlighted.has(s.id) ? 'highlight' : undefined}><SegmentLine segment={s} /></li>)}</ol>
           </aside>
         </div>
+        </div>
       </section>
+      </div>
     </>
   )
 }
@@ -125,11 +142,13 @@ interface CardProps {
   selection: Selection
   onSelect: (s: Selection) => void
   onChanged: () => void
+  /** 결정을 승인한 직후(모달을 닫는다) */
+  onApproved: () => void
   /** 승인된 결정의 업무 요청 화면 주소 */
   deliveryLink: string | null
 }
 
-function DecisionCard({ decision, departments, chair, selection, onSelect, onChanged, deliveryLink }: CardProps) {
+function DecisionCard({ decision, departments, chair, selection, onSelect, onChanged, onApproved, deliveryLink }: CardProps) {
   const editable = chair && (decision.status === 'PROPOSED' || decision.status === 'ON_HOLD')
   const canAddTask = chair && (editable || decision.status === 'APPROVED')
   const [summary, setSummary] = useState(decision.summary)
@@ -141,12 +160,13 @@ function DecisionCard({ decision, departments, chair, selection, onSelect, onCha
     decision.evidenceStatus === 'NEEDS_CHECK' ||
     decision.tasks.some((t) => t.status !== 'CANCELLED' && t.evidenceStatus === 'NEEDS_CHECK')
 
-  async function run(action: () => Promise<unknown>, fallback: string) {
+  async function run(action: () => Promise<unknown>, fallback: string, afterOk?: () => void) {
     setBusy(true)
     setError(null)
     try {
       await action()
       onChanged()
+      afterOk?.()
     } catch (e) {
       setError(conflictAware(e, onChanged, fallback))
     } finally {
@@ -156,7 +176,7 @@ function DecisionCard({ decision, departments, chair, selection, onSelect, onCha
 
   function approve() {
     if (needsCheck && !window.confirm('근거 확인이 필요한 후보가 있습니다. 근거를 확인했고 승인할까요?')) return
-    run(() => api.approve(decision), '승인하지 못했습니다.')
+    run(() => api.approve(decision), '승인하지 못했습니다.', onApproved)
   }
 
   return (
