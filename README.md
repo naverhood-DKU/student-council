@@ -107,7 +107,7 @@ http://localhost:5173 에서 열리고, `/api` 요청은 8080의 Spring 서버�
 | `local` | 로컬 개발. docker compose MySQL, 개발용 JWT 비밀값, 시드 데이터 |
 | `prod` | NCP 운영. 모든 접속 정보와 비밀값을 환경변수로만 받습니다(기본값 없음) |
 | `worker` | 비동기 작업 서버. HTTP API 없이 DB `job` 테이블만 폴링해서 처리합니다. 운영에서는 App과 따로 띄웁니다 |
-| `fake-ai` | CLOVA를 부르지 않고 고정 응답을 씁니다(부하 실험·데모 예비용). 예: `local,fake-ai` |
+| `fake-ai` | CLOVA를 부르지 않고 고정 응답을 씁니다(부하 실험·데모 예비용). 녹음 전사도 데모 전사로 고정됩니다. 예: `local,fake-ai` |
 
 `local` 프로필은 편의상 App 하나가 분석 작업까지 처리합니다(`app.worker.enabled=true`). 따로 Worker를 띄울 필요가 없습니다.
 
@@ -127,8 +127,60 @@ docker compose와 `local` 프로필 앱이 `.env`를 읽습니다(셸 환경변�
 | `DB_USERNAME`, `DB_PASSWORD` | prod 필수, local 선택 | DB 계정 |
 | `JWT_SECRET` | prod 필수, local 선택 | 32바이트 이상. 없으면 앱이 뜨지 않습니다. 예: `openssl rand -base64 48` |
 | `CLOVA_STUDIO_API_KEY` | 실제 분석에 필요 | CLOVA Studio API 키. 서버(Worker)만 읽고 브라우저로 보내지 않습니다. 없으면 분석이 `AI_KEY_MISSING`으로 실패합니다 |
+| `SPEECH_MODE` | 선택 | 녹음 전사 방식. `fake`(기본, local): 녹음과 상관없이 "(데모 전사)" 고정 문장 / `clova`(prod 기본): CLOVA Speech 실제 호출 |
+| `CLOVA_SPEECH_INVOKE_URL` | 실제 전사에 필요 | CLOVA Speech 도메인 빌더 > 설정 > 연동 정보의 **Invoke URL** 전체(`https://`로 시작). 키를 넣으면 `SPEECH_URL_INVALID`로 실패합니다 |
+| `CLOVA_SPEECH_SECRET_KEY` | 실제 전사에 필요 | 같은 화면의 **Secret Key**. 없으면 전사가 `SPEECH_KEY_MISSING`으로 실패합니다 |
+| `STORAGE_MODE` | 선택 | 녹음 저장소. `local`(기본): 이 서버 폴더 / `ncp`(prod 기본): NCP Object Storage |
+| `OBJECT_STORAGE_BUCKET` | prod 녹음에 필요 | 녹음용 비공개 버킷 이름(예: `council-recordings-…`). App·Worker 둘 다 |
+| `OBJECT_STORAGE_ACCESS_KEY`, `OBJECT_STORAGE_SECRET_KEY` | prod 녹음에 필요 | NCP 인증키. Object Storage 권한만 준 Sub Account 키를 권장합니다. 셋 중 하나라도 비면 앱은 뜨고 녹음 업로드만 503(`STORAGE_UNAVAILABLE`)으로 막힙니다 |
+| `LOCAL_STORAGE_DIR` | local 선택 | 로컬에서 올린 녹음을 저장할 폴더(기본: 시스템 임시 폴더 아래 `council-flow-recordings`) |
 | `SEED_PASSWORD` | local 선택 | 시드 계정 비밀번호 |
 | `MYSQL_PORT` | docker compose 선택 | 로컬 MySQL을 띄울 호스트 포트(기본 3306) |
+
+## 녹음 전사 써 보기 (로컬)
+
+로컬은 Object Storage 대신 서버 폴더(`LOCAL_STORAGE_DIR`)에 녹음을 저장합니다.
+기본은 **데모 전사**라서 어떤 녹음을 올려도 "(데모 전사)"가 붙은 고정 문장 3줄이 나옵니다(녹음 내용이 아님).
+
+실제 녹음 내용으로 전사하려면 `.env`에 아래 세 줄을 넣고 서버를 다시 띄웁니다.
+
+```
+SPEECH_MODE=clova
+CLOVA_SPEECH_INVOKE_URL=https://clovaspeech-gw.ncloud.com/external/v1/...   # 연동 정보의 Invoke URL
+CLOVA_SPEECH_SECRET_KEY=...                                               # 연동 정보의 Secret Key
+```
+
+- 로컬은 저장된 파일을 CLOVA Speech `/recognizer/upload`로 직접 보냅니다. 운영(prod)은 Object Storage에 있는 파일을 `/recognizer/object-storage`로 읽게 합니다.
+- 회장 계정 → **회의록 올리기** → 녹음(또는 m4a·mp3·wav 파일) → 올리면 전사 작업이 돌고, 회의 화면에서 진행·실패 이유와 **전사 회의 대본 보기**가 나옵니다.
+- 키가 틀리면 `SPEECH_HTTP_401`처럼 바로 실패하고, 응답을 기다리다 시간이 넘으면(기본 180초) 처리 여부를 몰라 다시 부르지 않습니다(`SPEECH_TIMEOUT`).
+- 화자는 "화자1, 화자2"로만 저장하고 실명과 연결하지 않습니다.
+
+## 운영 녹음 저장소 (NCP Object Storage)
+
+운영(`prod`)은 녹음을 NCP Object Storage 비공개 버킷에 둡니다(`STORAGE_MODE` 기본 `ncp`).
+
+1. 브라우저가 서버에서 받은 presigned PUT 주소(15분 유효)로 버킷에 **직접** 올립니다. 녹음이 App 서버를 거치지 않습니다.
+2. 전사 작업(Worker)이 버킷에 파일이 있는지 확인한 뒤, CLOVA Speech 에 `/recognizer/object-storage`로 그 키를 넘깁니다.
+   CLOVA Speech 가 버킷을 직접 읽으므로 **도메인 설정에서 이 버킷을 Object Storage 로 연동**해야 합니다.
+
+준비할 것:
+
+- App·Worker 환경변수: `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY`, `OBJECT_STORAGE_SECRET_KEY`.
+  Worker 에는 `CLOVA_SPEECH_INVOKE_URL`, `CLOVA_SPEECH_SECRET_KEY`도 넣습니다.
+- 버킷은 비공개로 둡니다. 버킷 **접근 제어**로 특정 서버만 허용하면 브라우저 업로드와 CLOVA 읽기가 막힐 수 있습니다.
+- 버킷 CORS: 사이트 주소에서 오는 `PUT`을 허용합니다. 브라우저가 `Content-Type` 헤더를 보내므로 헤더도 허용합니다.
+  콘솔에 메뉴가 없으면 S3 호환 API로 넣습니다(키는 NCP 인증키, 지역 `kr-standard`).
+
+  ```json
+  {"CORSRules":[{"AllowedOrigins":["https://서비스주소"],"AllowedMethods":["PUT"],"AllowedHeaders":["*"],"MaxAgeSeconds":3000}]}
+  ```
+
+  ```bash
+  aws --endpoint-url=https://kr.object.ncloudstorage.com --region kr-standard s3api put-bucket-cors --bucket 버킷이름 --cors-configuration file://cors.json
+  ```
+
+- 버킷·키가 비어 있어도 앱은 뜹니다. 그때는 녹음 업로드만 503 으로 막히고 텍스트 회의록은 그대로 씁니다.
+- presigned PUT 은 파일 크기를 강제하지 못합니다. 100MB 제한은 업로드 주소를 줄 때 신고한 크기로만 확인합니다.
 
 ## 테스트
 
@@ -371,7 +423,8 @@ src/main/java/kr/dku/councilflow/
   admin/     서비스 관리자: 그룹 만들기, 회장 계정 주기
   meeting/   회의, 발언(Segment), 회의록 나누기
   job/       DB 작업 큐와 Worker(가져가기·임대·재시도)
-  ai/        CLOVA Studio 클라이언트(실제/가짜)
+  ai/        CLOVA Studio·Speech 클라이언트(실제/가짜, AiConfig 에서 고름)
+  storage/   녹음 저장소(로컬: 서버 폴더에 저장하는 FakeObjectStorage / 운영: NcpObjectStorage)
   analysis/  회의 분석: 프롬프트, 형식 검증, 구간 합치기, 의미 검증·저장
   decision/  결정·업무, 승인, 업무보드
   delivery/  그룹 간 업무 요청, 수신함, 결과 제출·검토, 집계

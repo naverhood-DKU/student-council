@@ -76,6 +76,23 @@ app:
   ai:
     # real: CLOVA 실제 호출 / fake: 고정 응답 (fake-ai 프로필에서 바뀜)
     mode: real
+  speech:
+    # 녹음 전사. fake: "(데모 전사)" 고정 문장(기본) / clova: CLOVA Speech 실제 호출(prod 기본, 로컬은 .env 에 SPEECH_MODE=clova)
+    mode: ${SPEECH_MODE:fake}
+  storage:
+    # 녹음 저장소. local: 이 서버 폴더(FakeObjectStorage, 기본) / ncp: NCP Object Storage(prod 기본)
+    mode: ${STORAGE_MODE:local}
+    # local 저장소가 녹음 파일을 두는 폴더
+    local-dir: ${LOCAL_STORAGE_DIR:${java.io.tmpdir}/council-flow-recordings}
+    ncp:
+      # 비공개 버킷과 NCP 인증키. 환경변수로만 받고, 비어 있으면 앱은 뜨되 녹음 업로드·전사만 막는다.
+      endpoint: ${OBJECT_STORAGE_ENDPOINT:https://kr.object.ncloudstorage.com}
+      region: kr-standard
+      bucket: ${OBJECT_STORAGE_BUCKET:}
+      access-key: ${OBJECT_STORAGE_ACCESS_KEY:}
+      secret-key: ${OBJECT_STORAGE_SECRET_KEY:}
+      upload-url-ttl: 15m
+      call-timeout: 30s
   clova:
     quota:
       enabled: true
@@ -91,6 +108,12 @@ app:
       connect-timeout: 5s
       read-timeout: 240s
       max-completion-tokens: 8192
+    speech:
+      # 키와 주소는 환경변수로만 받는다. 비어 있으면 전사 작업이 SPEECH_KEY_MISSING 으로 실패한다.
+      invoke-url: ${CLOVA_SPEECH_INVOKE_URL:}
+      secret-key: ${CLOVA_SPEECH_SECRET_KEY:}
+      connect-timeout: 10s
+      read-timeout: 180s
   analysis:
     # 회의록이 이보다 길면 발언 ID를 유지한 채 구간으로 나눠 분석하고 합친다.
     chunk-chars: 12000

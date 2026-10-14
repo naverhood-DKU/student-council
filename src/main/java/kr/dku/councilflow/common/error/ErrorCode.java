@@ -17,6 +17,8 @@ public enum ErrorCode {
     VERSION_CONFLICT(HttpStatus.CONFLICT, "다른 사람이 먼저 수정했습니다. 새로 불러온 뒤 다시 시도해 주세요."),
     INVALID_TRANSITION(HttpStatus.CONFLICT, "지금 상태에서는 할 수 없는 변경입니다."),
     DUPLICATE(HttpStatus.CONFLICT, "이미 있는 항목입니다."),
+    STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE,
+            "녹음 저장소가 아직 준비되지 않았습니다. 텍스트 회의록으로 올리거나 관리자에게 알려 주세요."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버에서 오류가 났습니다. 잠시 뒤 다시 시도해 주세요.");
 
     private final HttpStatus status;
