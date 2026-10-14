@@ -151,18 +151,21 @@ export interface Job {
   lastError: string | null
   createdAt: string
   updatedAt: string
+  quotaWaitUntil: string | null;
 }
 
 export interface MeetingDetail {
   meeting: Meeting
   segmentCount: number
   latestJob: Job | null
+  segments?: Segment[];
 }
 
 export interface Segment {
   id: number
   label: string
   speaker: string | null
+  speakerLabel?: string | null;
   text: string
 }
 
