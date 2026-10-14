@@ -20,6 +20,12 @@ app:
     # 기존 지출 안내 테스트는 AI 호출이 한 번이라고 가정한다. 적용 재확인은 ExpenseApplicabilityTest 에서 켠다.
     applicability-check: false
     applicability-retry-delay: 0s
+  speech:
+    # 셸에 SPEECH_MODE=clova 가 있어도 테스트는 실제 CLOVA Speech 를 부르지 않는다.
+    mode: fake
+  storage:
+    mode: local
+    local-dir: ${java.io.tmpdir}/council-flow-test-recordings
   clova:
     quota:
       enabled: false

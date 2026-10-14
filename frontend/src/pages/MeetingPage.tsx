@@ -103,7 +103,7 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
           <ul className="transcript-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
             {detail.segments.map((seg, idx) => (
               <li key={idx} style={{ marginBottom: '8px', lineHeight: '1.5' }}>
-                <strong>{seg.speakerLabel || `화자 ${idx + 1}`}:</strong> {seg.text}
+                <strong>{seg.speaker || seg.speakerLabel || `화자 ${idx + 1}`}:</strong> {seg.text}
               </li>
             ))}
           </ul>
@@ -131,7 +131,7 @@ function Meeting({ org, detail, reload }: { org: OrgDetail; detail: MeetingDetai
 
       {meeting.status === 'ANALYSIS_FAILED' && (
         <div className="card warn-card" role="alert">
-          <strong>분석하지 못했습니다.</strong>
+          <strong>{job?.type === 'TRANSCRIBE' ? '녹음을 글로 옮기지 못했습니다.' : '분석하지 못했습니다.'}</strong>
           <p>{jobErrorText(job?.lastError ?? null)}</p>
           <p className="muted small">
             다시 분석하거나, 회의록을 고쳐 새로 올릴 수 있습니다. 회의 내용은 그대로 남아 있습니다.

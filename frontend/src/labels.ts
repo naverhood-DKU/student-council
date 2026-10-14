@@ -122,6 +122,16 @@ export function jobErrorText(code: string | null): string {
   if (code === 'AI_HTTP_429') return 'AI 사용량 한도에 걸렸습니다.'
   if (code.startsWith('AI_HTTP_5')) return 'AI 서버에 일시적인 오류가 났습니다.'
   if (code.startsWith('AI_HTTP_')) return `AI 서버가 요청을 거절했습니다(${code}).`
+  if (code === 'SPEECH_KEY_MISSING') return 'CLOVA Speech 키가 설정되지 않았습니다. 관리자에게 알려 주세요.'
+  if (code === 'SPEECH_URL_INVALID') return 'CLOVA Speech 주소(Invoke URL) 설정이 잘못됐습니다. 관리자에게 알려 주세요.'
+  if (code === 'SPEECH_AUDIO_MISSING') return '올린 녹음 파일을 찾지 못했습니다. 다시 올려 주세요.'
+  if (code === 'STORAGE_NOT_CONFIGURED') return '녹음 저장소 설정이 비어 있습니다. 관리자에게 알려 주세요.'
+  if (code === 'SPEECH_EMPTY_RESULT') return '녹음에서 말소리를 찾지 못했습니다.'
+  if (code === 'SPEECH_TIMEOUT')
+    return '녹음 변환이 제한 시간 안에 끝나지 않았습니다. 처리됐는지 알 수 없어 자동으로 다시 부르지 않았습니다.'
+  if (code === 'SPEECH_CONNECT_FAILED') return 'CLOVA Speech 서버에 연결하지 못했습니다.'
+  if (code === 'SPEECH_HTTP_401' || code === 'SPEECH_HTTP_403') return 'CLOVA Speech 키가 맞지 않습니다. 관리자에게 알려 주세요.'
+  if (code.startsWith('SPEECH_HTTP_')) return `CLOVA Speech 서버가 요청을 처리하지 못했습니다(${code}).`
   if (code === 'MAX_ATTEMPTS_EXCEEDED') return '여러 번 시도했지만 끝내지 못했습니다.'
   if (code === 'ALREADY_REVIEWED') return '이미 검토를 마친 결정이 있어 결과를 덮어쓰지 않았습니다.'
   if (code === 'TRANSCRIPT_CHANGED') return '분석하는 동안 회의록이 바뀌었습니다. 다시 분석해 주세요.'

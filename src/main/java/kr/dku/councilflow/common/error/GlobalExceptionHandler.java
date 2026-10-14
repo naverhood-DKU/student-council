@@ -1,6 +1,7 @@
 package kr.dku.councilflow.common.error;
 
 import java.util.stream.Collectors;
+import kr.dku.councilflow.storage.StorageUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -54,6 +55,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OptimisticLockingFailureException.class)
     ResponseEntity<ErrorBody> handleVersionConflict(OptimisticLockingFailureException e) {
         return respond(ErrorCode.VERSION_CONFLICT, ErrorCode.VERSION_CONFLICT.defaultMessage());
+    }
+
+    /** 운영에서 녹음 저장소(버킷·키) 설정이 비어 있음. 앱은 쓰되 녹음 업로드만 막는다. */
+    @ExceptionHandler(StorageUnavailableException.class)
+    ResponseEntity<ErrorBody> handleStorageUnavailable(StorageUnavailableException e) {
+        return respond(ErrorCode.STORAGE_UNAVAILABLE, ErrorCode.STORAGE_UNAVAILABLE.defaultMessage());
     }
 
     @ExceptionHandler(AccessDeniedException.class)

@@ -3,3 +3,9 @@
 app:
   seed:
     enabled: false
+  speech:
+    # 운영은 CLOVA Speech 로 실제 전사한다(Object Storage 연동, CLOVA_SPEECH_INVOKE_URL·CLOVA_SPEECH_SECRET_KEY 필요).
+    mode: ${SPEECH_MODE:clova}
+  storage:
+    # 운영 녹음은 NCP Object Storage 에 둔다(OBJECT_STORAGE_BUCKET·ACCESS_KEY·SECRET_KEY 필요, App·Worker 둘 다).
+    mode: ${STORAGE_MODE:ncp}

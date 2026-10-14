@@ -3,3 +3,5 @@
 app:
   ai:
     mode: fake
+  speech:
+    mode: fake
