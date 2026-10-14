@@ -55,6 +55,15 @@ app:
     ttl: 15m
   seed:
     enabled: false
+  rules:
+    # 학교 규정(resources/rules/*.json)을 모든 그룹이 쓰는 공통 규정으로 앱이 뜰 때 넣는다. 개정은 json 을 바꿔 새로 배포한다.
+    seed:
+      enabled: true
+    # 회의 분석이 끝나면 돈과 관련된 업무 카드를 규정에서 자동으로 확인한다(후보 조항 찾기 + AI 안내 작업).
+    auto-check:
+      enabled: true
+      # 회의 하나에서 자동으로 확인하는 업무 카드의 최대 수(AI 호출 비용을 묶어 둔다)
+      max-per-meeting: 15
   worker:
     # job 테이블 폴링. worker 프로필(운영)과 local 프로필에서 켠다.
     enabled: false

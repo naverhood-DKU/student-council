@@ -186,6 +186,8 @@ export interface TaskView {
   evidence: Segment[]
   origin: TaskOrigin
   version: number
+  /** 돈과 관련된 카드의 규정 확인 표시. 확인 대상이 아니면 null */
+  ruleCheck: RuleCheck | null
 }
 
 export interface DecisionView {
@@ -243,6 +245,33 @@ export interface BoardTask {
   version: number
   /** 체크리스트: 회장·담당 부서 부장이 부서 사람에게 맡긴 작은 할 일 */
   items: TaskItem[]
+  /** 돈과 관련된 카드의 규정 확인 표시. 확인 대상이 아니면 null */
+  ruleCheck: RuleCheck | null
+}
+
+/**
+ * 업무 카드의 규정 확인 표시. 확정이 아니라 가능성이며 안전하다는 뜻이 아니다.
+ * PROHIBITED 금지 가능성 / RISK 위험 / NONE 관련 조항 보기 / UNCHECKED 규정 확인 안 됨 / PENDING 확인 중 / FAILED 확인 못 함
+ */
+export type RuleCheckBadge = 'PROHIBITED' | 'RISK' | 'NONE' | 'UNCHECKED' | 'PENDING' | 'FAILED'
+
+export interface RuleCheckEvidence {
+  /** PROHIBITED 금지 / LIMITED 제한 / CONFLICT 충돌 */
+  kind: string
+  text: string
+  clauses: { clauseId: number; label: string; docTitle: string; mentionsRestriction: boolean }[]
+  /** 근거 조항 원문에서 서버가 확인한 구절 */
+  quote: string | null
+}
+
+export interface RuleCheck {
+  /** 지출 절차 확인 화면(/orgs/:orgId/expense/:reviewId)으로 이어지는 지출 검토 id */
+  reviewId: number
+  badge: RuleCheckBadge
+  label: string
+  summary: string
+  candidateCount: number
+  evidence: RuleCheckEvidence[]
 }
 
 export interface TaskItem {
@@ -749,6 +778,9 @@ export const api = {
   reviewClauses: (docId: number, clauseIds: number[]) =>
     request<{ reviewed: number }>('POST', `/api/rule-documents/${docId}/clauses/review`, { clauseIds }),
 
+  /** 카드 하나의 규정 확인 표시. 확인 대상이 아니면 null(204) */
+  taskRuleCheck: (taskId: number) => request<RuleCheck | undefined>('GET', `/api/tasks/${taskId}/rule-check`)
+    .then((value) => value ?? null),
   expenseReviews: (orgId: number) => request<ExpenseReviewSummary[]>('GET', `/api/orgs/${orgId}/expense-reviews`),
   expenseReview: (reviewId: number) => request<ExpenseReviewView>('GET', `/api/expense-reviews/${reviewId}`),
   createExpenseReview: (input: ExpenseReviewInput) => request<ExpenseReviewView>('POST', '/api/expense-reviews', input),

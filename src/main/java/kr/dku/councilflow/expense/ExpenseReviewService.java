@@ -34,6 +34,7 @@ import kr.dku.councilflow.rule.RuleDocStatus;
 import kr.dku.councilflow.rule.RuleDocument;
 import kr.dku.councilflow.rule.RuleDocumentRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -177,23 +178,9 @@ public class ExpenseReviewService {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "지출 항목에 두 글자 이상의 낱말이 있어야 규정에서 찾을 수 있습니다.");
         }
         LocalDate asOf = request.plannedDate() != null ? request.plannedDate() : LocalDate.now(clock.withZone(SEOUL));
-        List<Clause> found = new ArrayList<>(clauses.searchConfirmed(orgId, query, asOf, MAX_CANDIDATES));
-
-        // 금액이 있으면 "30만원"처럼 규정에 쓰인 표기로도 찾는다. 항목으로 찾은 조항 뒤에만 덧붙여서,
-        // 금액만 언급한 조항이 항목에 맞는 조항보다 위로 올라오지 않게 한다.
-        String searchText = query;
-        String amountQuery = SearchTerms.amountTerms(amount);
-        if (amountQuery != null && found.size() < MAX_CANDIDATES) {
-            Set<Long> seen = new LinkedHashSet<>(found.stream().map(Clause::getId).toList());
-            int appended = 0;
-            for (Clause clause : clauses.searchConfirmed(orgId, amountQuery, asOf, MAX_CANDIDATES)) {
-                if (found.size() < MAX_CANDIDATES && appended < MAX_AMOUNT_CANDIDATES && seen.add(clause.getId())) {
-                    found.add(clause);
-                    appended++;
-                }
-            }
-            searchText = truncate(query + " " + amountQuery, SEARCH_TEXT_MAX);
-        }
+        Found candidates = findCandidates(orgId, query, amount, asOf);
+        List<Clause> found = candidates.clauses();
+        String searchText = candidates.searchText();
         ExpenseReviewStatus status = found.isEmpty() ? ExpenseReviewStatus.NEEDS_CHECK : ExpenseReviewStatus.CANDIDATES_FOUND;
 
         ExpenseReview review = reviews.save(new ExpenseReview(orgId, decisionId, item, amount, fundSource,
@@ -212,6 +199,64 @@ public class ExpenseReviewService {
         }
         audit.record(access.userId(), orgId, "EXPENSE_REVIEW_REQUESTED", "EXPENSE_REVIEW", review.getId(), null, after);
         return view(review);
+    }
+
+    /** 후보 조항과, 실제로 찾는 데 쓴 말 */
+    private record Found(List<Clause> clauses, String searchText) {
+    }
+
+    /**
+     * 후보 조항 찾기(AI 없음). 그 그룹이 올린 확정 규정과 모든 그룹이 쓰는 공통 규정에서 찾는다.
+     * 금액이 있으면 "30만원"처럼 규정에 쓰인 표기로도 찾되, 항목으로 찾은 조항 뒤에만 덧붙여서
+     * 금액만 언급한 조항이 항목에 맞는 조항보다 위로 올라오지 않게 한다.
+     */
+    private Found findCandidates(long orgId, String query, Long amount, LocalDate asOf) {
+        List<Clause> found = new ArrayList<>(clauses.searchConfirmed(orgId, query, asOf, MAX_CANDIDATES));
+        String searchText = query;
+        String amountQuery = SearchTerms.amountTerms(amount);
+        if (amountQuery != null && found.size() < MAX_CANDIDATES) {
+            Set<Long> seen = new LinkedHashSet<>(found.stream().map(Clause::getId).toList());
+            int appended = 0;
+            for (Clause clause : clauses.searchConfirmed(orgId, amountQuery, asOf, MAX_CANDIDATES)) {
+                if (found.size() < MAX_CANDIDATES && appended < MAX_AMOUNT_CANDIDATES && seen.add(clause.getId())) {
+                    found.add(clause);
+                    appended++;
+                }
+            }
+            searchText = truncate(query + " " + amountQuery, SEARCH_TEXT_MAX);
+        }
+        return new Found(found, searchText);
+    }
+
+    /**
+     * 회의 분석이 끝난 뒤 업무 카드 하나에 대해 서버가 자동으로 하는 규정 확인.
+     * 사람의 요청이 아니므로 권한 확인을 거치지 않고(요청자 없음), 후보가 있을 때만 AI 안내 작업을 만든다.
+     * 지출 항목에서 두 글자 이상의 낱말을 못 뽑으면 만들지 않고 null 을 돌려준다.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    ExpenseReview createForTask(long orgId, Long decisionId, long taskId, String item, Long amount,
+                                String fundSource, String note) {
+        String query = SearchTerms.build(item, fundSource, note, null);
+        if (query == null) {
+            return null;
+        }
+        LocalDate asOf = LocalDate.now(clock.withZone(SEOUL));
+        Found candidates = findCandidates(orgId, query, amount, asOf);
+        ExpenseReviewStatus status = candidates.clauses().isEmpty()
+                ? ExpenseReviewStatus.NEEDS_CHECK : ExpenseReviewStatus.CANDIDATES_FOUND;
+        ExpenseReview review = reviews.save(ExpenseReview.auto(orgId, decisionId, taskId, truncate(item, 200), amount,
+                fundSource, note, candidates.searchText(), status,
+                candidates.clauses().stream().map(Clause::getId).toList()));
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("taskId", taskId);
+        after.put("status", status.name());
+        after.put("candidateClauseIds", review.getClauseIds());
+        if (status == ExpenseReviewStatus.CANDIDATES_FOUND) {
+            Job job = jobs.save(Job.queue(JobType.EXPENSE, review.getId()));
+            after.put("jobId", job.getId());
+        }
+        audit.record(null, orgId, "EXPENSE_REVIEW_AUTO_CREATED", "EXPENSE_REVIEW", review.getId(), null, after);
+        return review;
     }
 
     @Transactional(readOnly = true)
@@ -405,8 +450,9 @@ public class ExpenseReviewService {
     /** 사람이 결과를 읽을 때 놓치면 안 되는 점. 저장하지 않고 볼 때마다 계산한다. */
     private List<String> notices(ExpenseReview review, List<CandidateView> candidates) {
         List<String> notices = new ArrayList<>();
-        if (docs.countByOrgIdAndStatus(review.getOrgId(), RuleDocStatus.CONFIRMED) == 0) {
-            notices.add("이 그룹에 확정된 규정이 없습니다. 규정을 올려 검수·확정해야 근거를 찾을 수 있습니다.");
+        if (docs.countByOrgIdAndStatus(review.getOrgId(), RuleDocStatus.CONFIRMED) == 0
+                && docs.countByOrgIdIsNullAndStatus(RuleDocStatus.CONFIRMED) == 0) {
+            notices.add("확정된 규정이 없습니다. 규정이 확정돼 있어야 근거를 찾을 수 있습니다.");
         } else if (candidates.isEmpty()) {
             notices.add("관련 조항을 찾지 못했습니다. 이것은 문제가 없다는 뜻이 아닙니다. 규정에서 이 지출을 다루는지 직접 확인해 주세요.");
         }

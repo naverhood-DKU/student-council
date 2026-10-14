@@ -11,6 +11,7 @@ import {
   type TaskStatus,
 } from '../api'
 import { useAuth } from '../auth'
+import { RuleCheckBadge } from './RuleCheckBadge'
 import { isOverdue, positionLabel, TASK_STATUS_LABEL } from '../labels'
 import { canWorkFor, errorMessage, isOwner, useLoad, useOrg } from '../useOrg'
 import { canClearDepartment } from './TaskForms'
@@ -188,6 +189,8 @@ function TaskCard({ task, org, chair, people, onUpdate, onChanged }: TaskCardPro
       <p className="small clamp">
         <Link to={`/orgs/${org.id}/meetings/${task.meetingId}`}>{task.meetingTitle}</Link>: {task.decisionSummary}
       </p>
+
+      {!finished && <RuleCheckBadge taskId={task.id} initial={task.ruleCheck} />}
 
       {task.departmentId != null && (
         <Checklist task={task} manager={canWork} people={people} onChanged={onChanged} />

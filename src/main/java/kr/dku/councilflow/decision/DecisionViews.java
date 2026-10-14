@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import kr.dku.councilflow.expense.TaskRuleChecks;
 import kr.dku.councilflow.meeting.Segment;
 import kr.dku.councilflow.meeting.SegmentRepository;
 import kr.dku.councilflow.org.Department;
@@ -20,10 +21,12 @@ public class DecisionViews {
 
     private final SegmentRepository segments;
     private final TaskRepository tasks;
+    private final TaskRuleChecks ruleChecks;
 
-    DecisionViews(SegmentRepository segments, TaskRepository tasks) {
+    DecisionViews(SegmentRepository segments, TaskRepository tasks, TaskRuleChecks ruleChecks) {
         this.segments = segments;
         this.tasks = tasks;
+        this.ruleChecks = ruleChecks;
     }
 
     public record SegmentView(long id, String label, String speaker, String text) {
@@ -48,7 +51,9 @@ public class DecisionViews {
             List<Long> sourceSegmentIds,
             List<SegmentView> evidence,
             TaskOrigin origin,
-            long version) {
+            long version,
+            /** 돈과 관련된 카드의 규정 확인 표시. 확인 대상이 아니면 null */
+            TaskRuleChecks.RuleCheckView ruleCheck) {
     }
 
     public record DecisionView(
@@ -74,10 +79,12 @@ public class DecisionViews {
                 ? List.of()
                 : tasks.findByDecisionIdInOrderById(decisions.stream().map(Decision::getId).toList());
         Map<Long, SegmentView> segmentById = segmentMap(decisions, allTasks, knownSegments);
+        Map<Long, TaskRuleChecks.RuleCheckView> checks =
+                ruleChecks.byTask(allTasks.stream().map(Task::getId).toList());
         Map<Long, List<Task>> tasksByDecision = allTasks.stream()
                 .collect(Collectors.groupingBy(t -> t.getDecision().getId()));
         return decisions.stream()
-                .map(d -> decision(d, tasksByDecision.getOrDefault(d.getId(), List.of()), segmentById))
+                .map(d -> decision(d, tasksByDecision.getOrDefault(d.getId(), List.of()), segmentById, checks))
                 .toList();
     }
 
@@ -87,18 +94,20 @@ public class DecisionViews {
 
     public TaskView task(Task task) {
         Map<Long, SegmentView> segmentById = segmentMap(List.of(), List.of(task), List.of());
-        return task(task, segmentById);
+        return task(task, segmentById, ruleChecks.byTask(List.of(task.getId())));
     }
 
-    private DecisionView decision(Decision d, List<Task> decisionTasks, Map<Long, SegmentView> segmentById) {
+    private DecisionView decision(Decision d, List<Task> decisionTasks, Map<Long, SegmentView> segmentById,
+                                  Map<Long, TaskRuleChecks.RuleCheckView> checks) {
         return new DecisionView(d.getId(), d.getMeeting().getId(), d.getAgenda(), d.getSummary(), d.getStatus(),
                 d.getAiStatus(), d.getEvidenceStatus(), d.getValidationNotes(), d.getSourceSegmentIds(),
                 evidence(d.getSourceSegmentIds(), segmentById), d.getExpenseProposal(),
                 d.getApprovedBy() == null ? null : d.getApprovedBy().getName(), d.getVersion(),
-                decisionTasks.stream().map(t -> task(t, segmentById)).toList());
+                decisionTasks.stream().map(t -> task(t, segmentById, checks)).toList());
     }
 
-    private TaskView task(Task t, Map<Long, SegmentView> segmentById) {
+    private TaskView task(Task t, Map<Long, SegmentView> segmentById,
+                          Map<Long, TaskRuleChecks.RuleCheckView> checks) {
         Department department = t.getDepartment();
         Department suggested = t.getSuggestedDepartment();
         return new TaskView(t.getId(), t.getDecision().getId(), t.getTitle(), t.getStatus(),
@@ -108,7 +117,8 @@ public class DecisionViews {
                 suggested == null ? null : suggested.getId(),
                 suggested == null ? null : suggested.getName(),
                 t.getDueDate(), t.getEvidenceStatus(), t.getValidationNotes(), t.getSourceSegmentIds(),
-                evidence(t.getSourceSegmentIds(), segmentById), t.getOrigin(), t.getVersion());
+                evidence(t.getSourceSegmentIds(), segmentById), t.getOrigin(), t.getVersion(),
+                checks.get(t.getId()));
     }
 
     private static List<SegmentView> evidence(List<Long> ids, Map<Long, SegmentView> segmentById) {

@@ -2,6 +2,7 @@ package kr.dku.councilflow.analysis;
 
 import java.time.ZoneId;
 import java.util.List;
+import kr.dku.councilflow.expense.RuleCheckPlanner;
 import kr.dku.councilflow.job.JobFailure;
 import kr.dku.councilflow.job.JobHandler;
 import kr.dku.councilflow.job.JobType;
@@ -29,16 +30,18 @@ class MeetingAnalysisHandler implements JobHandler<MeetingAnalysisHandler.Result
     private final DepartmentRepository departments;
     private final MeetingAnalyzer analyzer;
     private final ProposalWriter writer;
+    private final RuleCheckPlanner ruleChecks;
     private final TransactionTemplate readOnly;
 
     MeetingAnalysisHandler(MeetingRepository meetings, SegmentRepository segments, DepartmentRepository departments,
-                           MeetingAnalyzer analyzer, ProposalWriter writer,
+                           MeetingAnalyzer analyzer, ProposalWriter writer, RuleCheckPlanner ruleChecks,
                            PlatformTransactionManager transactionManager) {
         this.meetings = meetings;
         this.segments = segments;
         this.departments = departments;
         this.analyzer = analyzer;
         this.writer = writer;
+        this.ruleChecks = ruleChecks;
         this.readOnly = new TransactionTemplate(transactionManager);
         this.readOnly.setReadOnly(true);
     }
@@ -61,6 +64,8 @@ class MeetingAnalysisHandler implements JobHandler<MeetingAnalysisHandler.Result
     public void onSuccess(long meetingId, Result result) {
         Meeting meeting = meetings.findById(meetingId).orElseThrow();
         writer.write(meeting, result.transcriptVersion(), result.analysis());
+        // 돈과 관련된 업무 카드를 규정에서 자동으로 확인한다(후보 조항 찾기 + AI 안내 작업). 승인을 막지 않는다.
+        ruleChecks.planForMeeting(meeting);
         meeting.markAnalyzed();
     }
 

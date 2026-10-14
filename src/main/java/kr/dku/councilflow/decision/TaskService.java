@@ -16,6 +16,8 @@ import kr.dku.councilflow.auth.OrgAccessGuard;
 import kr.dku.councilflow.common.error.ApiException;
 import kr.dku.councilflow.common.error.ErrorCode;
 import kr.dku.councilflow.common.web.IfMatch;
+import kr.dku.councilflow.expense.RuleCheckPlanner;
+import kr.dku.councilflow.expense.TaskRuleChecks;
 import kr.dku.councilflow.org.Department;
 import kr.dku.councilflow.org.DepartmentRepository;
 import org.springframework.stereotype.Service;
@@ -46,9 +48,12 @@ public class TaskService {
     private final DecisionViews views;
     private final TaskItemService itemService;
     private final AuditService audit;
+    private final TaskRuleChecks ruleChecks;
+    private final RuleCheckPlanner ruleCheckPlanner;
 
     TaskService(TaskRepository tasks, DecisionRepository decisions, DepartmentRepository departments,
-                OrgAccessGuard accessGuard, DecisionViews views, TaskItemService itemService, AuditService audit) {
+                OrgAccessGuard accessGuard, DecisionViews views, TaskItemService itemService, AuditService audit,
+                TaskRuleChecks ruleChecks, RuleCheckPlanner ruleCheckPlanner) {
         this.tasks = tasks;
         this.decisions = decisions;
         this.departments = departments;
@@ -56,12 +61,15 @@ public class TaskService {
         this.views = views;
         this.itemService = itemService;
         this.audit = audit;
+        this.ruleChecks = ruleChecks;
+        this.ruleCheckPlanner = ruleCheckPlanner;
     }
 
     public record BoardTask(long id, String title, TaskStatus status, TaskOrigin origin, Long departmentId,
                             String departmentName, LocalDate dueDate, long decisionId, String decisionSummary,
                             long meetingId, String meetingTitle, long version,
-                            List<TaskItemService.ItemView> items) {
+                            List<TaskItemService.ItemView> items,
+                            TaskRuleChecks.RuleCheckView ruleCheck) {
     }
 
     public record AddTask(
@@ -89,6 +97,8 @@ public class TaskService {
             task.activate();
         }
         tasks.saveAndFlush(task);
+        // 돈과 관련된 카드면 규정을 자동으로 확인한다(회의 분석 때와 같은 규칙).
+        ruleCheckPlanner.planForTask(task);
         audit.record(user.id(), orgId, "TASK_ADDED", "TASK", task.getId(), null, snapshot(task));
         return views.task(task);
     }
@@ -103,13 +113,15 @@ public class TaskService {
                 .toList();
         Map<Long, List<TaskItemService.ItemView>> checklists =
                 itemService.viewsByTask(board.stream().map(Task::getId).toList());
+        Map<Long, TaskRuleChecks.RuleCheckView> checks =
+                ruleChecks.byTask(board.stream().map(Task::getId).toList());
         return board.stream()
                 .map(t -> new BoardTask(t.getId(), t.getTitle(), t.getStatus(), t.getOrigin(),
                         t.getDepartment() == null ? null : t.getDepartment().getId(),
                         t.getDepartment() == null ? null : t.getDepartment().getName(),
                         t.getDueDate(), t.getDecision().getId(), t.getDecision().getSummary(),
                         t.getDecision().getMeeting().getId(), t.getDecision().getMeeting().getTitle(),
-                        t.getVersion(), checklists.getOrDefault(t.getId(), List.of())))
+                        t.getVersion(), checklists.getOrDefault(t.getId(), List.of()), checks.get(t.getId())))
                 .toList();
     }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
+import { RuleCheckBadge } from './RuleCheckBadge'
 import { api, ApiError, type DecisionView, type OrgDetail, type Proposals, type Segment, type TaskView } from '../api'
 import { AI_STATUS_LABEL, DECISION_STATUS_LABEL, TASK_STATUS_LABEL } from '../labels'
 import { errorMessage, isOwner, useLoad } from '../useOrg'
@@ -341,6 +342,7 @@ function TaskRow({ task, departments, editable: decisionEditable, selected, onSe
         </p>
       )}
       <Notes notes={task.validationNotes} />
+      {!cancelled && <RuleCheckBadge taskId={task.id} initial={task.ruleCheck} />}
       {selected && <Evidence segments={task.evidence} />}
       {error && <p className="error" role="alert">{error}</p>}
       {editable && (
