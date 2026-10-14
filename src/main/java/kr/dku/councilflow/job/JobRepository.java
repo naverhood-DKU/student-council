@@ -42,9 +42,4 @@ public interface JobRepository extends JpaRepository<Job, Long> {
     @Transactional
     @Query("update Job j set j.lockedUntil = :newLockedUntil where j.id = :id and j.version = :version and j.lockedUntil > :now and j.status = kr.dku.councilflow.job.JobStatus.RUNNING")
     int renewLease(@Param("id") long id, @Param("version") long version, @Param("newLockedUntil") Instant newLockedUntil, @Param("now") Instant now);
-
-    /** 회의를 지울 때 그 회의의 분석·전사 작업 기록을 지운다. */
-    @Modifying
-    @Query("delete from Job j where j.type in :types and j.targetId = :targetId")
-    int deleteByTypesAndTargetId(Collection<JobType> types, Long targetId);
 }
