@@ -69,6 +69,8 @@ public class AiResponseParser {
             taskList.add(new AiAnalysis.Task(
                     text(task, "title", taskPath + ".title", true),
                     text(task, "owner_department", taskPath + ".owner_department", false),
+                    text(task, "department", taskPath + ".department", false),
+                    text(task, "department_reason", taskPath + ".department_reason", false),
                     text(task, "due_date", taskPath + ".due_date", false),
                     ids(task, taskPath + ".source_segment_ids")));
         }

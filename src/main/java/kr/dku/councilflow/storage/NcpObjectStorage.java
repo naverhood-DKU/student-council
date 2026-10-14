@@ -104,6 +104,12 @@ public class NcpObjectStorage implements ObjectStorage, DisposableBean {
         }
     }
 
+    /** 버킷에서 지운다. S3 삭제는 파일이 없어도 성공으로 답한다. */
+    @Override
+    public void delete(String objectKey) {
+        client().deleteObject(delete -> delete.bucket(properties.bucket()).key(objectKey));
+    }
+
     private S3Client client() {
         if (s3 == null) {
             throw new StorageUnavailableException();

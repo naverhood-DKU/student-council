@@ -27,6 +27,11 @@ class FakeObjectStorageTest {
         assertThat(storage.exists(key)).isTrue();
         assertThat(Files.readAllBytes(storage.find(key).orElseThrow())).containsExactly(1, 2, 3);
         assertThat(storage.exists("recordings/3f1c2a4e-0000-4000-8000-000000000002.m4a")).isFalse();
+
+        storage.delete(key);
+        assertThat(storage.exists(key)).isFalse();
+        storage.delete(key);
+        storage.delete("../x.m4a");
     }
 
     @Test

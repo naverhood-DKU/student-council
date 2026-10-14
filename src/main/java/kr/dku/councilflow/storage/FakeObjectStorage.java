@@ -57,6 +57,19 @@ public class FakeObjectStorage implements ObjectStorage, LocalAudioFiles {
     }
 
     @Override
+    public void delete(String objectKey) {
+        Path path = pathOf(objectKey);
+        if (path == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
     public Optional<Path> find(String objectKey) {
         Path path = pathOf(objectKey);
         return path != null && Files.isRegularFile(path) ? Optional.of(path) : Optional.empty();

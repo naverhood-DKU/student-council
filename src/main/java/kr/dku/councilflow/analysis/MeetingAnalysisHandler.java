@@ -9,7 +9,6 @@ import kr.dku.councilflow.job.JobType;
 import kr.dku.councilflow.meeting.Meeting;
 import kr.dku.councilflow.meeting.MeetingRepository;
 import kr.dku.councilflow.meeting.SegmentRepository;
-import kr.dku.councilflow.org.Department;
 import kr.dku.councilflow.org.DepartmentRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -80,10 +79,11 @@ class MeetingAnalysisHandler implements JobHandler<MeetingAnalysisHandler.Result
                 .findByMeetingIdAndTranscriptVersionOrderBySeq(meetingId, meeting.getTranscriptVersion()).stream()
                 .map(s -> new MeetingSnapshot.Line(s.label(), s.getSpeakerLabel(), s.getText()))
                 .toList();
-        List<String> departmentNames = departments.findByOrganizationIdAndActiveTrueOrderById(meeting.getOrgId()).stream()
-                .map(Department::getName)
-                .toList();
+        List<MeetingSnapshot.DepartmentInfo> departmentInfos =
+                departments.findByOrganizationIdAndActiveTrueOrderById(meeting.getOrgId()).stream()
+                        .map(d -> new MeetingSnapshot.DepartmentInfo(d.getName(), d.getRoleKeywords()))
+                        .toList();
         return new MeetingSnapshot(meetingId, meeting.getTitle(), meeting.getHeldAt().atZone(KOREA).toLocalDate(),
-                meeting.getTranscriptVersion(), departmentNames, lines);
+                meeting.getTranscriptVersion(), departmentInfos, lines);
     }
 }

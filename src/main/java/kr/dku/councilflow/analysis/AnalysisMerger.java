@@ -80,8 +80,11 @@ public final class AnalysisMerger {
             tasks.merge(normalize(task.title()), task, (a, b) -> {
                 LinkedHashSet<String> merged = new LinkedHashSet<>(a.sourceSegmentIds());
                 merged.addAll(b.sourceSegmentIds());
+                boolean useB = a.department().isEmpty() && !b.department().isEmpty();
                 return new AiAnalysis.Task(a.title(),
                         a.ownerDepartment().isEmpty() ? b.ownerDepartment() : a.ownerDepartment(),
+                        useB ? b.department() : a.department(),
+                        useB ? b.departmentReason() : a.departmentReason(),
                         a.dueDate().isEmpty() ? b.dueDate() : a.dueDate(),
                         List.copyOf(merged));
             });

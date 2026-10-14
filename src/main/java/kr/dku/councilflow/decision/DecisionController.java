@@ -5,6 +5,7 @@ import java.util.List;
 import kr.dku.councilflow.auth.CurrentUser;
 import kr.dku.councilflow.common.web.IfMatch;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -68,6 +69,13 @@ class DecisionController {
                                       @RequestHeader(value = IfMatch.HEADER, required = false) String ifMatch,
                                       @RequestBody JsonNode body) {
         return taskService.update(user, taskId, ifMatch, body);
+    }
+
+    /** 업무 완전 삭제(회장만, 어떤 상태든, 체크리스트 포함) */
+    @DeleteMapping("/api/tasks/{taskId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteTask(CurrentUser user, @PathVariable long taskId) {
+        taskService.delete(user, taskId);
     }
 
     /** 부서 업무보드: 승인된 업무만 */

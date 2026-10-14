@@ -3,39 +3,55 @@ package kr.dku.councilflow.meeting;
 
 import jakarta.validation.Valid;
 import java.io.IOException;
+import java.net.URL;
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import kr.dku.councilflow.auth.CurrentUser;
+import kr.dku.councilflow.common.error.ApiException;
+import kr.dku.councilflow.common.error.ErrorCode;
 import kr.dku.councilflow.job.JobView;
+import kr.dku.councilflow.storage.ObjectStorage;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-import kr.dku.councilflow.storage.ObjectStorage;
-import java.net.URL;
-import java.time.Instant;
-import java.util.Set;
-import java.util.UUID;
-import org.springframework.http.ResponseEntity;
-import kr.dku.councilflow.auth.CurrentUser;
-import kr.dku.councilflow.common.error.ApiException;
-import kr.dku.councilflow.common.error.ErrorCode;
-import org.springframework.web.bind.annotation.PutMapping;
 
 @RestController
 class MeetingController {
 
-   private final MeetingService meetingService;
+    private final MeetingService meetingService;
     private final ObjectStorage objectStorage;
+    private final MeetingDeletionService deletionService;
 
-    MeetingController(MeetingService meetingService, ObjectStorage objectStorage) {
+    MeetingController(MeetingService meetingService, ObjectStorage objectStorage,
+                      MeetingDeletionService deletionService) {
         this.meetingService = meetingService;
         this.objectStorage = objectStorage;
+        this.deletionService = deletionService;
+    }
+
+    /** 회의를 지우면 함께 사라지는 것(결정·업무·체크리스트·다른 그룹에 보낸 요청). 회장만 */
+    @GetMapping("/api/meetings/{meetingId}/deletion-impact")
+    MeetingDeletionService.DeletionImpact deletionImpact(CurrentUser user, @PathVariable long meetingId) {
+        return deletionService.impact(user, meetingId);
+    }
+
+    /** 회의 완전 삭제(회장만, 되돌릴 수 없음) */
+    @DeleteMapping("/api/meetings/{meetingId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(CurrentUser user, @PathVariable long meetingId) {
+        deletionService.delete(user, meetingId);
     }
 
     /** 텍스트 회의록으로 회의 생성(그룹 owner). */

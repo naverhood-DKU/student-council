@@ -31,8 +31,11 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * - 근거: 인용한 발언 ID가 이 회의록(현재 전사 버전)에 실제로 있어야 한다. 없거나 하나라도 틀리면
  *   후보를 버리지 않고 "근거 확인 필요"(NEEDS_CHECK)로 표시한다(원칙 3).
- * - 담당: 등록된 부서 이름과 정확히 같을 때만 담당으로 넣는다. 아니면 비우고, 역할 키워드로 고른 부서는
- *   추천(suggested)에만 넣는다(원칙 2).
+ * - 담당: ① 회의에서 말한 담당이 등록된 부서 이름과 정확히 같고, 그 이름이 업무(또는 결정)의 근거 발언에 실제로 있으면 그 부서.
+ *         (모델이 말하지 않은 담당을 "말한 담당"으로 적은 적이 있어 근거 발언으로 확인한다. 없으면 AI의 추측으로 본다.)
+ *         ② 아니면 AI가 업무 내용과 부서 역할을 보고 고른 부서(등록된 이름과 정확히 같을 때만). "AI 지정"과 이유를 남기고,
+ *            회장이 승인 전에 확인·변경한다(원칙 2).
+ *         ③ 둘 다 아니면 비우고, 역할 키워드로 고른 부서는 추천(suggested)에만 넣는다.
  * - 기한: YYYY-MM-DD 로 읽히는 날짜만. 아니면 비운다.
  */
 @Component
@@ -63,9 +66,12 @@ public class ProposalWriter {
         }
         replaceOldProposals(meeting.getId());
 
-        Map<String, Long> segmentIdByLabel = segments
-                .findByMeetingIdAndTranscriptVersionOrderBySeq(meeting.getId(), transcriptVersion).stream()
+        List<Segment> transcript = segments.findByMeetingIdAndTranscriptVersionOrderBySeq(meeting.getId(),
+                transcriptVersion);
+        Map<String, Long> segmentIdByLabel = transcript.stream()
                 .collect(Collectors.toMap(Segment::label, Segment::getId));
+        Map<Long, String> textById = transcript.stream()
+                .collect(Collectors.toMap(Segment::getId, Segment::getText));
         List<Department> orgDepartments = departments.findByOrganizationIdAndActiveTrueOrderById(meeting.getOrgId());
 
         for (AiAnalysis.Agenda agenda : analysis.agendas()) {
@@ -77,7 +83,8 @@ public class ProposalWriter {
                         candidate.summary(), AiDecisionStatus.valueOf(candidate.decisionStatus()), evidence.ids(),
                         evidence.status(), notes, expense(candidate.expenseProposal(), notes)));
                 for (AiAnalysis.Task taskCandidate : candidate.tasks()) {
-                    tasks.save(task(decision, taskCandidate, segmentIdByLabel, orgDepartments));
+                    tasks.save(task(decision, taskCandidate, segmentIdByLabel, textById, evidence.ids(),
+                            orgDepartments));
                 }
             }
         }
@@ -97,18 +104,36 @@ public class ProposalWriter {
     }
 
     private Task task(Decision decision, AiAnalysis.Task candidate, Map<String, Long> segmentIdByLabel,
-                      List<Department> orgDepartments) {
+                      Map<Long, String> textById, List<Long> decisionEvidence, List<Department> orgDepartments) {
         List<String> notes = new ArrayList<>();
         Evidence evidence = resolve(candidate.sourceSegmentIds(), segmentIdByLabel, notes);
 
         String said = candidate.ownerDepartment();
         Department department = DepartmentMatcher.exact(said, orgDepartments).orElse(null);
+        if (department != null && !mentioned(said, evidence.ids(), decisionEvidence, textById)) {
+            // 말한 담당으로 바로 확정되는 경우만 확인한다. 근거 발언에 없으면 AI의 추측으로 다룬다("AI 지정").
+            notes.add("AI가 '회의에서 말한 담당'으로 '" + said + "'을(를) 적었지만 근거 발언에 그 말이 없어 "
+                    + "AI가 고른 담당으로 다룹니다.");
+            candidate = new AiAnalysis.Task(candidate.title(), "",
+                    candidate.department().isBlank() ? said : candidate.department(),
+                    candidate.departmentReason(), candidate.dueDate(), candidate.sourceSegmentIds());
+            said = "";
+            department = null;
+        }
+        Department picked = null;
         Department suggested = null;
         if (department == null) {
+            picked = DepartmentMatcher.exact(candidate.department(), orgDepartments).orElse(null);
             if (!said.isBlank()) {
-                notes.add("회의에서 말한 담당 '" + said + "'은(는) 등록된 부서 이름과 달라 비워 두었습니다.");
+                notes.add("회의에서 말한 담당 '" + said + "'은(는) 등록된 부서 이름과 달라 "
+                        + (picked == null ? "비워 두었습니다." : "AI가 고른 부서를 넣었습니다."));
             }
-            suggested = DepartmentMatcher.suggest(said + " " + candidate.title(), orgDepartments).orElse(null);
+            if (picked == null && !candidate.department().isBlank()) {
+                notes.add("AI가 고른 부서 '" + candidate.department() + "'은(는) 등록된 부서가 아니라 쓰지 않았습니다.");
+            }
+            if (picked == null) {
+                suggested = DepartmentMatcher.suggest(said + " " + candidate.title(), orgDepartments).orElse(null);
+            }
         }
 
         LocalDate dueDate = null;
@@ -120,11 +145,30 @@ public class ProposalWriter {
             }
         }
 
-        return Task.proposal(decision, truncate(candidate.title(), 300), department, dueDate, suggested,
-                said.isBlank() ? null : truncate(said, 100), evidence.ids(), evidence.status(), notes);
+        Task task = Task.proposal(decision, truncate(candidate.title(), 300), department != null ? department : picked,
+                dueDate, suggested, said.isBlank() ? null : truncate(said, 100), evidence.ids(), evidence.status(), notes);
+        if (picked != null) {
+            task.markDepartmentByAi(truncate(candidate.departmentReason(), 300));
+        }
+        return task;
     }
 
     private record Evidence(List<Long> ids, EvidenceStatus status) {
+    }
+
+    /** 말한 담당 표현이 업무 근거 발언(없으면 결정 근거 발언)에 실제로 있는지. 띄어쓰기는 무시한다. */
+    private static boolean mentioned(String said, List<Long> taskEvidence, List<Long> decisionEvidence,
+                                     Map<Long, String> textById) {
+        String wanted = said.replaceAll("\\s", "");
+        for (List<Long> ids : List.of(taskEvidence, decisionEvidence)) {
+            for (Long id : ids) {
+                String text = textById.getOrDefault(id, "");
+                if (text.replaceAll("\\s", "").contains(wanted)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static Evidence resolve(List<String> labels, Map<String, Long> segmentIdByLabel, List<String> notes) {

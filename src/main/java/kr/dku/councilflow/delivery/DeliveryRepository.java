@@ -30,4 +30,8 @@ public interface DeliveryRepository extends JpaRepository<Delivery, Long> {
 
     /** 받은 그룹 안에서 그 부서가 맡은 전달 중 상태가 statuses 가 아닌 것의 수 */
     long countByInternalDepartmentIdAndStatusNotIn(Long departmentId, Collection<DeliveryStatus> statuses);
+
+    /** 여러 결정으로 보낸 요청(받은 그룹 포함). 회의 삭제 전 영향 확인용 */
+    @Query("select d from Delivery d join fetch d.toOrganization where d.decision.id in :decisionIds order by d.id")
+    List<Delivery> findByDecisionIds(Collection<Long> decisionIds);
 }

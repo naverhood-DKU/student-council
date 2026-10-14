@@ -622,3 +622,10 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
 @media (prefers-reduced-motion: reduce) { .decision-branch { animation: none; } }
 
 .meeting-inspector[hidden], .meeting-inspector [hidden] { display: none !important; }
+
+/* 되돌릴 수 없는 삭제 영역 */
+.danger-zone { margin-top: 32px; padding: 14px 16px; border: 1px solid var(--danger); border-radius: var(--radius);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.danger-zone p { margin: 2px 0 0; }
+.danger-zone .error { flex-basis: 100%; }
+.card-tools { display: inline-flex; gap: 10px; }

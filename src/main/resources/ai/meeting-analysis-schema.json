@@ -25,13 +25,15 @@
                     "properties": {
                       "title": { "type": "string", "description": "할 일" },
                       "owner_department": { "type": "string", "description": "회의에서 말한 담당. 말하지 않았으면 빈 문자열" },
+                      "department": { "type": "string", "description": "맡을 부서. 등록된 부서 이름 중 하나 그대로. 근거가 없으면 빈 문자열" },
+                      "department_reason": { "type": "string", "description": "department를 고른 이유 한 문장. department가 비었으면 빈 문자열" },
                       "due_date": { "type": "string", "description": "YYYY-MM-DD. 정할 수 없으면 빈 문자열" },
                       "source_segment_ids": {
                         "type": "array",
                         "items": { "type": "string" }
                       }
                     },
-                    "required": ["title", "owner_department", "due_date", "source_segment_ids"]
+                    "required": ["title", "owner_department", "department", "department_reason", "due_date", "source_segment_ids"]
                   }
                 },
                 "expense_proposal": {

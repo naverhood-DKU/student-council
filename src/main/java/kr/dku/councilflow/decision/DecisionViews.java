@@ -42,6 +42,10 @@ public class DecisionViews {
             TaskStatus status,
             Long departmentId,
             String departmentName,
+            /** AI가 업무 내용으로 고른 담당인지. 회장이 다른 부서로 바꾸면 false */
+            boolean departmentByAi,
+            /** AI가 그 부서를 고른 이유 */
+            String departmentReason,
             String ownerDepartmentText,
             Long suggestedDepartmentId,
             String suggestedDepartmentName,
@@ -113,6 +117,7 @@ public class DecisionViews {
         return new TaskView(t.getId(), t.getDecision().getId(), t.getTitle(), t.getStatus(),
                 department == null ? null : department.getId(),
                 department == null ? null : department.getName(),
+                t.isDepartmentByAi(), t.getDepartmentReason(),
                 t.getOwnerDepartmentText(),
                 suggested == null ? null : suggested.getId(),
                 suggested == null ? null : suggested.getName(),

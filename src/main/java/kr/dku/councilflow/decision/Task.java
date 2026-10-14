@@ -37,6 +37,14 @@ public class Task extends BaseEntity {
     @JoinColumn(name = "department_id")
     private Department department;
 
+    /** AI가 업무 내용을 보고 고른 담당인지(회의에서 말한 담당이 아님). 회장이 다른 부서로 바꾸면 false */
+    @Column(nullable = false)
+    private boolean departmentByAi;
+
+    /** AI가 그 부서를 고른 이유 */
+    @Column(length = 300)
+    private String departmentReason;
+
     private LocalDate dueDate;
 
     @Enumerated(EnumType.STRING)
@@ -88,6 +96,12 @@ public class Task extends BaseEntity {
         return task;
     }
 
+    /** AI가 업무 내용으로 고른 담당이라고 표시한다(회의에서 말한 담당이 아님). */
+    public void markDepartmentByAi(String reason) {
+        this.departmentByAi = true;
+        this.departmentReason = reason == null || reason.isBlank() ? null : reason;
+    }
+
     /** 회장이 직접 추가하는 업무. 결정이 이미 승인됐으면 만든 뒤 activate() 로 바로 업무보드에 올린다. */
     public static Task manual(Decision decision, String title, Department department, LocalDate dueDate) {
         Task task = proposal(decision, title, department, dueDate, null, null, List.of(), EvidenceStatus.OK,
@@ -108,12 +122,21 @@ public class Task extends BaseEntity {
             throw new ApiException(ErrorCode.INVALID_TRANSITION,
                     "진행 중인 업무는 담당 부서를 비울 수 없습니다. 다른 부서로 바꾸기만 할 수 있습니다.");
         }
+        if (!sameDepartment(this.department, department)) {
+            // 사람이 담당을 바꾸면 더 이상 AI가 고른 담당이 아니다.
+            this.departmentByAi = false;
+            this.departmentReason = null;
+        }
         this.department = department;
         if (status == TaskStatus.UNASSIGNED && department != null) {
             moveTo(TaskStatus.ASSIGNED);
         } else if (status == TaskStatus.ASSIGNED && department == null) {
             moveTo(TaskStatus.UNASSIGNED);
         }
+    }
+
+    private static boolean sameDepartment(Department a, Department b) {
+        return a == null ? b == null : b != null && a.getId().equals(b.getId());
     }
 
     public void changeDueDate(LocalDate dueDate) {
@@ -170,6 +193,14 @@ public class Task extends BaseEntity {
 
     public List<Long> getSourceSegmentIds() {
         return sourceSegmentIds;
+    }
+
+    public boolean isDepartmentByAi() {
+        return departmentByAi;
+    }
+
+    public String getDepartmentReason() {
+        return departmentReason;
     }
 
     public String getOwnerDepartmentText() {

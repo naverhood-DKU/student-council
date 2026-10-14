@@ -9,8 +9,12 @@ public record MeetingSnapshot(
         String title,
         LocalDate heldDate,
         int transcriptVersion,
-        List<String> departmentNames,
+        List<DepartmentInfo> departments,
         List<Line> lines) {
+
+    /** 등록된 부서 이름과 역할 키워드. AI가 업무 내용을 보고 담당 부서를 고를 때 쓴다. */
+    public record DepartmentInfo(String name, String roleKeywords) {
+    }
 
     /** label 은 AI가 인용하는 발언 ID(S12). */
     public record Line(String label, String speaker, String text) {

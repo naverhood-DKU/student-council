@@ -3,6 +3,7 @@ package kr.dku.councilflow.meeting;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -68,6 +69,35 @@ class AudioTranscriptionFlowTest extends IntegrationTest {
                 .andExpect(jsonPath("$.segments", hasSize(3)))
                 .andExpect(jsonPath("$.segments[0].speaker").value("화자1"))
                 .andExpect(jsonPath("$.segments[0].text", startsWith("(데모 전사)")));
+    }
+
+    @Test
+    void 녹음_회의를_지우면_녹음_원본_파일도_지운다() throws Exception {
+        long cse = orgId("컴퓨터공학과 학생회");
+        String chair = bearer("ce");
+        String created = mvc.perform(post("/api/orgs/{id}/meetings/audio/upload-url", cse)
+                        .header(HttpHeaders.AUTHORIZATION, chair)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"orgId": %d, "title": "지울 녹음 회의", "filename": "a.mp3", "fileSizeBytes": 2,
+                                 "consentConfirmed": true}
+                                """.formatted(cse)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long meetingId = ((Number) JsonPath.read(created, "$.meetingId")).longValue();
+        String objectKey = JsonPath.read(created, "$.objectKey");
+        mvc.perform(put("/fake-storage/upload/" + objectKey).content(new byte[] {1, 2}))
+                .andExpect(status().isOk());
+        assertThat(storage.exists(objectKey)).isTrue();
+
+        mvc.perform(get("/api/meetings/{id}/deletion-impact", meetingId).header(HttpHeaders.AUTHORIZATION, chair))
+                .andExpect(jsonPath("$.hasRecording").value(true));
+        mvc.perform(delete("/api/meetings/{id}", meetingId).header(HttpHeaders.AUTHORIZATION, chair))
+                .andExpect(status().is2xxSuccessful());
+
+        assertThat(storage.exists(objectKey)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM meeting WHERE id = ?", Integer.class, meetingId))
+                .isZero();
     }
 
     @Test
