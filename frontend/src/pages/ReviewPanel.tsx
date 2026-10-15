@@ -82,6 +82,7 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
             {data.decisions.map(decision => <div key={`${decision.id}-${decision.version}`} hidden={decision.id !== selectedDecision?.id}>
               <DecisionCard decision={decision} departments={data.departments} chair={isOwner(org)}
                 selection={selection} onSelect={setSelection} onChanged={reload} onApproved={closeModal}
+                onlyTaskId={selection?.kind === 'task' && decision.id === selectedDecision?.id ? selection.id : null}
                 deliveryLink={`/orgs/${org.id}/decisions/${decision.id}/deliveries`} />
             </div>)}
           </div>
@@ -144,11 +145,13 @@ interface CardProps {
   onChanged: () => void
   /** 결정을 승인한 직후(모달을 닫는다) */
   onApproved: () => void
+  /** 업무 카드를 눌러 열었을 때 그 업무만 보여 준다(null 이면 결정의 업무 전부) */
+  onlyTaskId: number | null
   /** 승인된 결정의 업무 요청 화면 주소 */
   deliveryLink: string | null
 }
 
-function DecisionCard({ decision, departments, chair, selection, onSelect, onChanged, onApproved, deliveryLink }: CardProps) {
+function DecisionCard({ decision, departments, chair, selection, onSelect, onChanged, onApproved, onlyTaskId, deliveryLink }: CardProps) {
   const editable = chair && (decision.status === 'PROPOSED' || decision.status === 'ON_HOLD')
   const canAddTask = chair && (editable || decision.status === 'APPROVED')
   const [summary, setSummary] = useState(decision.summary)
@@ -213,7 +216,17 @@ function DecisionCard({ decision, departments, chair, selection, onSelect, onCha
       )}
 
       {decision.tasks.length > 0 && <h4>업무</h4>}
-      {decision.tasks.map((task) => (
+      {onlyTaskId != null && decision.tasks.length > 1 && (
+        <p className="muted small">
+          이 결정에는 업무 {decision.tasks.length - 1}개가 더 있습니다.
+          {editable && ' 승인하면 함께 확정됩니다.'}{' '}
+          <button type="button" className="link-button"
+                  onClick={() => onSelect({ kind: 'decision', id: decision.id, segmentIds: decision.sourceSegmentIds })}>
+            결정 전체 보기
+          </button>
+        </p>
+      )}
+      {decision.tasks.filter((task) => onlyTaskId == null || task.id === onlyTaskId).map((task) => (
         <TaskRow
           key={`${task.id}-${task.version}`}
           task={task}
