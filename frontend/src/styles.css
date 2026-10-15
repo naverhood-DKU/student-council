@@ -637,3 +637,12 @@ label.compact { margin-bottom: 8px; font-size: 0.85rem; }
 .danger-zone p { margin: 2px 0 0; }
 .danger-zone .error { flex-basis: 100%; }
 .card-tools { display: inline-flex; gap: 10px; }
+
+/* 검토 모달: 카드 사이를 옆으로 넘기는 움직임 */
+.review-nav { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 12px; }
+.review-nav .ghost { padding: 6px 12px; }
+@keyframes review-slide-next { from { opacity: 0; transform: translateX(48px); } to { opacity: 1; transform: none; } }
+@keyframes review-slide-prev { from { opacity: 0; transform: translateX(-48px); } to { opacity: 1; transform: none; } }
+.slide-in-next { animation: review-slide-next .28s ease-out; }
+.slide-in-prev { animation: review-slide-prev .28s ease-out; }
+@media (prefers-reduced-motion: reduce) { .slide-in-next, .slide-in-prev { animation: none; } }

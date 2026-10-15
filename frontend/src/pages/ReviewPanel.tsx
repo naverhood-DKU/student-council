@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { RuleCheckBadge } from './RuleCheckBadge'
 import { api, ApiError, type DecisionView, type OrgDetail, type Proposals, type Segment, type TaskView } from '../api'
@@ -6,6 +6,7 @@ import { AI_STATUS_LABEL, confirmDeleteTask, DECISION_STATUS_LABEL, TASK_STATUS_
 import { errorMessage, isOwner, useLoad } from '../useOrg'
 import { AddTaskForm } from './TaskForms'
 import { MeetingFlow } from './MeetingFlow'
+import { departmentBranches } from '../meetingBranches'
 
 type Selection = { kind: 'decision' | 'task'; id: number; segmentIds: number[] } | null
 
@@ -21,6 +22,9 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
   )
   const [selection, setSelection] = useState<Selection>(null)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
+  const [slide, setSlide] = useState<'next' | 'prev' | null>(null)
+  // 화면 그리는 중에 채워 두고, 키보드 이벤트에서 꺼내 쓴다
+  const navRef = useRef<{ prev: (() => void) | null; next: (() => void) | null }>({ prev: null, next: null })
 
   useEffect(() => {
     if (proposals.status === 'ready') {
@@ -34,7 +38,13 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
   // 모달이 열려 있는 동안: Esc 로 닫기, 뒤 화면 스크롤 잠금, 근거 발언을 모달 안에서 가운데로 보여 주기
   useEffect(() => {
     if (!modalOpen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setSelection(null); setTranscriptOpen(false) } }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setSelection(null); setTranscriptOpen(false); return }
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return
+      if (e.key === 'ArrowLeft') navRef.current.prev?.()
+      if (e.key === 'ArrowRight') navRef.current.next?.()
+    }
     window.addEventListener('keydown', onKey)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -59,6 +69,36 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
   const selectedDecision = data.decisions.find(d => selection?.kind === 'decision'
     ? d.id === selection.id : d.tasks.some(t => t.id === selection?.id))
 
+  // 흐름도에 보이는 순서대로 검토할 카드를 한 줄로 늘어놓는다(업무 없는 결정은 결정 하나가 한 칸)
+  const items = data.decisions.flatMap(d => {
+    const pending = d.status === 'PROPOSED' || d.status === 'ON_HOLD'
+    const tasks = departmentBranches(d.tasks).flatMap(b => b.tasks)
+    const entries: NonNullable<Selection>[] = tasks.length > 0
+      ? tasks.map(t => ({ kind: 'task', id: t.id, segmentIds: t.sourceSegmentIds }))
+      : [{ kind: 'decision', id: d.id, segmentIds: d.sourceSegmentIds }]
+    return entries.map(entry => ({ entry, decisionId: d.id, pending }))
+  })
+  const currentIndex = !selection ? -1 : items.findIndex(it => selection.kind === 'task'
+    ? it.entry.kind === 'task' && it.entry.id === selection.id
+    : it.decisionId === selection.id)
+  const goTo = (i: number, dir: 'next' | 'prev') => {
+    if (i < 0 || i >= items.length) return
+    setSlide(dir)
+    setSelection(items[i].entry)
+  }
+  // 방금 승인한 결정의 나머지 카드는 건너뛰고, 뒤에 남은 승인 전 카드로 간다
+  const nextPendingAfter = (decisionId: number) =>
+    items.findIndex((it, i) => i > currentIndex && it.pending && it.decisionId !== decisionId)
+  const afterApproved = (decisionId: number) => {
+    const next = nextPendingAfter(decisionId)
+    if (next >= 0) goTo(next, 'next')
+    else closeModal()
+  }
+  navRef.current = {
+    prev: currentIndex > 0 ? () => goTo(currentIndex - 1, 'prev') : null,
+    next: currentIndex >= 0 && currentIndex < items.length - 1 ? () => goTo(currentIndex + 1, 'next') : null,
+  }
+
   return (
     <>
       <MeetingFlow data={data} selection={selection} onSelect={setSelection}
@@ -74,14 +114,23 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
       <section id="meeting-inspector" className="meeting-inspector review-modal" role="dialog" aria-modal="true"
                aria-label="선택한 결정과 근거 검토">
         <header className="inspector-heading"><h3>{selectedDecision ? '결정 · 업무 검토' : '회의록 원문'}</h3>
+          {selectedDecision && currentIndex >= 0 && items.length > 1 && (
+            <div className="review-nav" aria-label="업무 카드 이동">
+              <button type="button" className="ghost" disabled={!navRef.current.prev} onClick={() => navRef.current.prev?.()} aria-label="이전 카드">‹ 이전</button>
+              <span className="muted small">{currentIndex + 1} / {items.length}</span>
+              <button type="button" className="ghost" disabled={!navRef.current.next} onClick={() => navRef.current.next?.()} aria-label="다음 카드">다음 ›</button>
+            </div>
+          )}
           <button type="button" className="ghost" onClick={closeModal}>닫기 ✕</button>
         </header>
         <div className="review-modal-body">
+        <div key={`${selection?.kind}-${selection?.id}`} className={slide ? `slide-in-${slide}` : undefined}>
         <div className={selectedDecision ? 'review' : 'transcript-only'}>
           <div className="candidates" hidden={!selectedDecision}>
             {data.decisions.map(decision => <div key={`${decision.id}-${decision.version}`} hidden={decision.id !== selectedDecision?.id}>
               <DecisionCard decision={decision} departments={data.departments} chair={isOwner(org)}
-                selection={selection} onSelect={setSelection} onChanged={reload} onApproved={closeModal}
+                selection={selection} onSelect={setSelection} onChanged={reload} onApproved={() => afterApproved(decision.id)}
+                approveLabel={nextPendingAfter(decision.id) >= 0 ? '승인하고 다음 카드' : '승인'}
                 onlyTaskId={selection?.kind === 'task' && decision.id === selectedDecision?.id ? selection.id : null}
                 deliveryLink={`/orgs/${org.id}/decisions/${decision.id}/deliveries`} />
             </div>)}
@@ -90,6 +139,7 @@ export function ReviewPanel({ org, meetingId, onReviewComplete }: { org: OrgDeta
             <h3>{selection ? '근거가 된 회의록' : '회의록 원문'}</h3><p className="muted small">{selection ? '선택한 결정·업무의 근거 발언을 강조했습니다.' : '회의에서 나눈 발언을 원문 그대로 확인하세요.'}</p>
             <ol className="segments">{data.segments.map(s => <li key={s.id} id={`seg-${s.id}`} className={highlighted.has(s.id) ? 'highlight' : undefined}><SegmentLine segment={s} /></li>)}</ol>
           </aside>
+        </div>
         </div>
         </div>
       </section>
@@ -147,11 +197,13 @@ interface CardProps {
   onApproved: () => void
   /** 업무 카드를 눌러 열었을 때 그 업무만 보여 준다(null 이면 결정의 업무 전부) */
   onlyTaskId: number | null
+  /** 승인 버튼 글자 */
+  approveLabel: string
   /** 승인된 결정의 업무 요청 화면 주소 */
   deliveryLink: string | null
 }
 
-function DecisionCard({ decision, departments, chair, selection, onSelect, onChanged, onApproved, onlyTaskId, deliveryLink }: CardProps) {
+function DecisionCard({ decision, departments, chair, selection, onSelect, onChanged, onApproved, onlyTaskId, approveLabel, deliveryLink }: CardProps) {
   const editable = chair && (decision.status === 'PROPOSED' || decision.status === 'ON_HOLD')
   const canAddTask = chair && (editable || decision.status === 'APPROVED')
   const [summary, setSummary] = useState(decision.summary)
@@ -270,7 +322,7 @@ function DecisionCard({ decision, departments, chair, selection, onSelect, onCha
           )}
           <button type="button" className="primary inline" disabled={busy || summary.trim() !== decision.summary}
                   onClick={approve}>
-            승인
+            {approveLabel}
           </button>
         </div>
       )}
